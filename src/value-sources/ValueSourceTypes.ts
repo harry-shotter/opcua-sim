@@ -18,7 +18,6 @@ export enum ValueSourceType {
 // Base value source interface with discriminator
 interface BaseValueSource {
   type: string;
-  minimumSampleRate: number;
 }
 
 // --- Random/Noise Functions ---

@@ -7,7 +7,7 @@ import { validateValueSource } from "../src/value-sources/ValueSourceTypes";
 const start = new Date(0);
 const at = (seconds: number) => new Date(seconds * 1000);
 
-// Sources omit the unused `minimumSampleRate` field, so cast through `any`.
+// Source literals are cast through `any` to keep the test cases terse.
 const handler = new ValueSourceHandler();
 const value = (source: any, seconds: number) =>
   handler.getValue("test", source, start, at(seconds));
