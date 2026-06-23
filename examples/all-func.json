@@ -1,0 +1,146 @@
+{
+  "namespaces": [
+    {
+      "id": 1,
+      "name": "Simulation",
+      "uri": "urn:simulation:test",
+      "folders": [
+        {
+          "name": "Allsourcetypes",
+          "devices": [
+            {
+              "name": "Randomsources",
+              "variables": [
+                {
+                  "name": "BasicRandom",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "random",
+                    "min": 0,
+                    "max": 100,
+                    "updateFrequency": 1
+                  }
+                },
+                {
+                  "name": "RandomWalk",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "randomWalk",
+                    "min": 20,
+                    "max": 30,
+                    "stepSize": 0.1,
+                    "updateFrequency": 2
+                  }
+                },
+                {
+                  "name": "PerlinNoise",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "perlinNoise",
+                    "amplitude": 20,
+                    "frequency": 1,
+                    "offset": 10
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Waveformsources",
+              "variables": [
+                {
+                  "name": "SineWave",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sinWave",
+                    "amplitude": 10,
+                    "frequency": 0.1,
+                    "phase": 0,
+                    "offset": 50
+                  }
+                },
+                {
+                  "name": "SquareWave",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "squareWave",
+                    "amplitude": 5,
+                    "frequency": 0.2,
+                    "dutyCycle": 0.7,
+                    "offset": 0
+                  }
+                },
+                {
+                  "name": "TriangleWave",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "triangleWave",
+                    "amplitude": 15,
+                    "frequency": 0.05,
+                    "offset": 25
+                  }
+                },
+                {
+                  "name": "Sawtooth",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sawtooth",
+                    "amplitude": 20,
+                    "frequency": 0.1,
+                    "offset": 30,
+                    "rising": true
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Patternsources",
+              "variables": [
+                {
+                  "name": "StepPattern",
+                  "type": "Int32",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "step",
+                    "values": [0, 25, 50, 75, 100],
+                    "interval": 10,
+                    "loop": true
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Externalsources",
+              "variables": [
+                {
+                  "name": "Living Room Temp",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "homeAssistant",
+                    "entityId": "sensor.living_room_current_temperature"
+                  }
+                },
+                {
+                  "name": "Battery",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "homeAssistant",
+                    "entityId": "sensor.phone_battery_level"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

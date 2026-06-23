@@ -1,0 +1,33 @@
+{
+  "namespaces": [
+    {
+      "id": 1,
+      "name": "Simulation",
+      "uri": "urn:simulation:temperature",
+      "folders": [
+        {
+          "name": "Room1",
+          "devices": [
+            {
+              "name": "TempSensor",
+              "variables": [
+                {
+                  "name": "Temperature",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sinWave",
+                    "amplitude": 2.5,
+                    "frequency": 0.0167,
+                    "offset": 22,
+                    "phase": 0
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

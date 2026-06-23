@@ -1,0 +1,136 @@
+{
+  "namespaces": [
+    {
+      "id": 1,
+      "name": "Simulation",
+      "uri": "urn:simulation:multi-source",
+      "folders": [
+        {
+          "name": "Sensors",
+          "devices": [
+            {
+              "name": "TemperatureSensor",
+              "variables": [
+                {
+                  "name": "Temperature",
+                  "type": "Double",
+                  "minimumSamplingInterval": 1000,
+                  "source": {
+                    "type": "sinWave",
+                    "amplitude": 5,
+                    "frequency": 0.1,
+                    "offset": 20,
+                    "phase": 0
+                  }
+                }
+              ]
+            },
+            {
+              "name": "PressureSensor",
+              "variables": [
+                {
+                  "name": "Pressure",
+                  "type": "Double",
+                  "minimumSamplingInterval": 1000,
+                  "source": {
+                    "type": "random",
+                    "min": 950,
+                    "max": 1050
+                  }
+                }
+              ]
+            },
+            {
+              "name": "HumiditySensor",
+              "variables": [
+                {
+                  "name": "Humidity",
+                  "type": "Double",
+                  "minimumSamplingInterval": 1000,
+                  "source": {
+                    "type": "randomWalk",
+                    "min": 30,
+                    "max": 70,
+                    "stepSize": 2,
+                    "updateFrequency": 1
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Actuators",
+          "devices": [
+            {
+              "name": "Valve",
+              "variables": [
+                {
+                  "name": "Position",
+                  "type": "Double",
+                  "minimumSamplingInterval": 500,
+                  "source": {
+                    "type": "squareWave",
+                    "amplitude": 50,
+                    "frequency": 0.2,
+                    "dutyCycle": 0.5,
+                    "offset": 50
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Motor",
+              "variables": [
+                {
+                  "name": "Speed",
+                  "type": "Double",
+                  "minimumSamplingInterval": 500,
+                  "source": {
+                    "type": "triangleWave",
+                    "amplitude": 1000,
+                    "frequency": 0.05,
+                    "offset": 1000
+                  }
+                },
+                {
+                  "name": "Current",
+                  "type": "Double",
+                  "minimumSamplingInterval": 500,
+                  "source": {
+                    "type": "sawtooth",
+                    "amplitude": 5,
+                    "frequency": 0.1,
+                    "offset": 10,
+                    "rising": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Process",
+          "devices": [
+            {
+              "name": "BatchController",
+              "variables": [
+                {
+                  "name": "State",
+                  "type": "Int32",
+                  "minimumSamplingInterval": 1000,
+                  "source": {
+                    "type": "step",
+                    "values": [0, 1, 2, 3, 2, 1],
+                    "interval": 5,
+                    "loop": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

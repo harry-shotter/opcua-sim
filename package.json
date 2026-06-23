@@ -1,0 +1,26 @@
+{
+  "name": "opcua-sim",
+  "description": "A configurable OPC UA server for simulating industrial data from a JSON tag hierarchy.",
+  "module": "server.ts",
+  "type": "module",
+  "license": "MIT",
+  "author": "Harry Shotter",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harry-shotter/opcua-sim.git"
+  },
+  "scripts": {
+    "start": "bun run server.ts",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "node-opcua": "^2.143.0"
+  }
+}
