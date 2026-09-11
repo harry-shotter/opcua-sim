@@ -1,6 +1,8 @@
 import { OPCUAServer } from "node-opcua";
 import { HomeAssistant } from "./src/home-assistant/HomeAssistant";
 import ConfigureServer from "./src/ua-config/UaConfig";
+import loadConfig from "./src/ua-config/ConfigLoader";
+import resolveServerCapabilities from "./src/ua-config/ServerCapabilities";
 
 let homeAssistant: HomeAssistant | undefined = undefined;
 
@@ -25,10 +27,14 @@ if (!configFile) {
   throw new Error("No configuration file provided");
 }
 
+console.info("Loading configuration from", configFile);
+const config = await loadConfig(configFile);
+
 const server = new OPCUAServer({
   port: tryGetPort(4840),
   resourcePath: process.env.UA_RESOURCE_PATH ?? "/",
   alternateHostname: process.env.UA_ALTERNATE_HOST ?? "localhost",
+  serverCapabilities: resolveServerCapabilities(config),
   buildInfo: {
     productName: process.env.UA_PRODUCT_NAME ?? "OPC UA Server",
     buildNumber: "1",
@@ -38,9 +44,8 @@ const server = new OPCUAServer({
 
 await server.initialize();
 console.info("Initialized server");
-console.info("Loading configuration from", configFile);
 
-await ConfigureServer(configFile, server, homeAssistant);
+await ConfigureServer(config, server, homeAssistant);
 
 server.start(function () {
   console.info("Server is now listening ... ( press CTRL+C to stop)");

@@ -7,71 +7,28 @@ import {
   type Namespace,
   type OPCUAServer
 } from "node-opcua";
-import { addAggregateSupport } from "node-opcua-aggregates";
-import {
-  validateValueSource,
-  type ValueSource
-} from "../value-sources/ValueSourceTypes";
+import { installAggregateConfigurationOptions } from "node-opcua-aggregates";
+import installAggregates from "./Aggregates";
+import type {
+  DeviceConfig,
+  FolderConfig,
+  HierarchyRoot,
+  NamespaceConfig,
+  VariableConfig
+} from "./ConfigLoader";
 import ValueSourceHandler from "../value-sources/ValueSourceHandler";
 import type { HomeAssistant } from "../home-assistant/HomeAssistant";
 
-// Updated Variable interface
-interface VariableConfig {
-  name: string;
-  type: "Boolean" | "DateTime" | "Double" | "Int32" | "String";
-  source: ValueSource;
-  minimumSamplingInterval: number;
-}
-
-interface DeviceConfig {
-  name: string;
-  variables: VariableConfig[];
-}
-
-interface FolderConfig {
-  name: string;
-  folders?: FolderConfig[];
-  devices?: DeviceConfig[];
-}
-
-interface NamespaceConfig {
-  id: number;
-  name: string;
-  uri: string; // Added URI for OPC UA namespace identification
-  folders: FolderConfig[];
-}
-
-interface HierarchyRoot {
-  namespaces: NamespaceConfig[];
-}
-
-const validTypes = ["Boolean", "DateTime", "Double", "Int32", "String"];
-
 export default async function ConfigureServer(
-  configFile: string,
+  hierarchy: HierarchyRoot,
   server: OPCUAServer,
   haClient?: HomeAssistant
 ): Promise<OPCUAServer> {
   const valueHandler = new ValueSourceHandler(haClient);
-  const hierarchy = await importHierarchy(configFile);
 
   await createOpcUaHierarchy(hierarchy, server, valueHandler);
 
   return server;
-}
-
-async function importHierarchy(filePath: string): Promise<HierarchyRoot> {
-  try {
-    const file = Bun.file(filePath);
-
-    const data = await file.json();
-
-    validateRoot(data);
-
-    return data as HierarchyRoot;
-  } catch (error: any) {
-    throw new Error(`Error importing hierarchy: ${error.message}`);
-  }
 }
 
 async function createOpcUaHierarchy(
@@ -85,8 +42,8 @@ async function createOpcUaHierarchy(
       throw new Error("Address space not available");
     }
 
-    // Enable aggregation support (Interpolative, Min, Max, Average)
-    addAggregateSupport(addressSpace);
+    // Enable aggregation support
+    installAggregates(addressSpace);
 
     for (const namespaceConfig of hierarchyRoot.namespaces) {
       // Register the namespace with OPC UA server
@@ -233,13 +190,11 @@ async function createVariable(
         _reverseDataValue,
         callback
       ) => {
-        const dataValues: DataValue[] = [];
-
         if (
           historyReadRawModifiedDetails.startTime == null ||
           historyReadRawModifiedDetails.endTime == null
         ) {
-          callback(null, dataValues);
+          callback(null, noHistoryData(new Date()));
           return;
         }
 
@@ -265,10 +220,18 @@ async function createVariable(
             });
           });
 
-          callback(null, historyDataValues);
+          callback(
+            null,
+            historyDataValues.length > 0
+              ? historyDataValues
+              : noHistoryData(historyReadRawModifiedDetails.startTime)
+          );
         } catch (error: any) {
           console.error(`Error getting history for ${nodeId}: ${error.message}`);
-          callback(null, dataValues);
+          callback(
+            null,
+            noHistoryData(historyReadRawModifiedDetails.startTime)
+          );
         }
       },
       push: (_newDataValue): Promise<void> => {
@@ -277,11 +240,25 @@ async function createVariable(
     }
   });
 
+  // advertise the supported aggregates on the variable itself so clients can
+  // discover them without browsing the server capabilities
+  installAggregateConfigurationOptions(variableNode, {});
+
   return variableNode;
 }
 
-function getDefaultValue(type: VariableConfig["type"]): number | boolean | string | Date {
-  switch (type) {
+// node-opcua cannot aggregate over an empty history, so an explicit BadNoData
+// placeholder is returned instead of an empty array
+function noHistoryData(sourceTimestamp: Date): DataValue[] {
+  return [
+    new DataValue({
+      statusCode: StatusCodes.BadNoData,
+      sourceTimestamp
+    })
+  ];
+}
+
+function getDefaultValue(type: VariableConfig["type"]): number | boolean | string | Date {  switch (type) {
     case "Boolean":
       return false;
     case "DateTime":
@@ -316,106 +293,3 @@ function mapDataType(type: string): DataType {
   }
 }
 
-function validateRoot(hierarchyRoot: HierarchyRoot): void {
-  if (!hierarchyRoot.namespaces || !Array.isArray(hierarchyRoot.namespaces)) {
-    throw new Error("Invalid root: namespaces must be an array");
-  }
-
-  if (hierarchyRoot.namespaces.length === 0) {
-    throw new Error("Invalid root: namespaces array cannot be empty");
-  }
-
-  // Check for duplicate namespace IDs
-  const namespaceIds = new Set();
-  hierarchyRoot.namespaces.forEach((namespace: NamespaceConfig) => {
-    if (namespaceIds.has(namespace.id)) {
-      throw new Error(`Duplicate namespace ID found: ${namespace.id}`);
-    }
-    namespaceIds.add(namespace.id);
-  });
-
-  // Check for duplicate URIs
-  const namespaceUris = new Set();
-  hierarchyRoot.namespaces.forEach((namespace: NamespaceConfig) => {
-    if (namespaceUris.has(namespace.uri)) {
-      throw new Error(`Duplicate namespace URI found: ${namespace.uri}`);
-    }
-    namespaceUris.add(namespace.uri);
-  });
-
-  hierarchyRoot.namespaces.forEach(validateNamespace);
-}
-
-function validateNamespace(namespace: NamespaceConfig): void {
-  if (!namespace.id || typeof namespace.id !== "number") {
-    throw new Error("Invalid namespace: missing or invalid id");
-  }
-  if (!namespace.name || typeof namespace.name !== "string") {
-    throw new Error("Invalid namespace: missing or invalid name");
-  }
-  if (!namespace.uri || typeof namespace.uri !== "string") {
-    throw new Error("Invalid namespace: missing or invalid uri");
-  }
-  if (!Array.isArray(namespace.folders)) {
-    throw new Error("Invalid namespace: folders must be an array");
-  }
-
-  // Validate URI format (basic check)
-  try {
-    new URL(namespace.uri);
-  } catch {
-    throw new Error(
-      `Invalid namespace: uri '${namespace.uri}' is not a valid URI`
-    );
-  }
-
-  namespace.folders.forEach(validateFolder);
-}
-
-function validateFolder(folder: FolderConfig): void {
-  if (!folder.name || typeof folder.name !== "string") {
-    throw new Error("Invalid folder: missing or invalid name");
-  }
-
-  if (folder.folders) {
-    if (!Array.isArray(folder.folders)) {
-      throw new Error("Invalid folder: folders must be an array");
-    }
-    folder.folders.forEach(validateFolder);
-  }
-
-  if (folder.devices) {
-    if (!Array.isArray(folder.devices)) {
-      throw new Error("Invalid folder: devices must be an array");
-    }
-    folder.devices.forEach(validateDevice);
-  }
-}
-
-function validateDevice(device: DeviceConfig): void {
-  if (!device.name || typeof device.name !== "string") {
-    throw new Error("Invalid device: missing or invalid name");
-  }
-
-  if (!Array.isArray(device.variables)) {
-    throw new Error("Invalid device: variables must be an array");
-  }
-
-  device.variables.forEach(validateVariable);
-}
-
-function validateVariable(variable: VariableConfig): void {
-  if (!variable.name || typeof variable.name !== "string") {
-    throw new Error("Invalid variable: missing or invalid Name");
-  }
-
-  if (!variable.type || !validTypes.includes(variable.type)) {
-    throw new Error("Invalid variable: missing or invalid Type");
-  }
-
-  if (!variable.source || typeof variable.source !== "object") {
-    throw new Error("Invalid variable: missing or invalid Source");
-  }
-
-  validateValueSource(variable.source);
-}
