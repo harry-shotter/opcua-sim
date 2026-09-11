@@ -5,17 +5,20 @@ export interface VariableConfig {
   type: "Boolean" | "DateTime" | "Double" | "Int32" | "String";
   source: ValueSource;
   minimumSamplingInterval: number;
+  roles?: NodeRoleName[];
 }
 
 export interface DeviceConfig {
   name: string;
   variables: VariableConfig[];
+  roles?: NodeRoleName[];
 }
 
 export interface FolderConfig {
   name: string;
   folders?: FolderConfig[];
   devices?: DeviceConfig[];
+  roles?: NodeRoleName[];
 }
 
 export interface NamespaceConfig {
@@ -33,8 +36,37 @@ export interface ServerCapabilitiesConfig {
   maxSubscriptionsPerSession?: number;
 }
 
+export const userRoleNames = [
+  "AuthenticatedUser",
+  "ConfigureAdmin",
+  "Engineer",
+  "Observer",
+  "Operator",
+  "SecurityAdmin",
+  "Supervisor"
+] as const;
+
+export type UserRoleName = (typeof userRoleNames)[number];
+
+export const nodeRoleNames = ["Anonymous", ...userRoleNames] as const;
+
+export type NodeRoleName = (typeof nodeRoleNames)[number];
+
+export interface UserConfig {
+  username: string;
+  password?: string;
+  passwordSha256?: string;
+  role?: UserRoleName;
+}
+
+export interface SecurityConfig {
+  allowAnonymous?: boolean;
+  users?: UserConfig[];
+}
+
 export interface HierarchyRoot {
   serverCapabilities?: ServerCapabilitiesConfig;
+  security?: SecurityConfig;
   namespaces: NamespaceConfig[];
 }
 
@@ -77,6 +109,10 @@ export function validateRoot(hierarchyRoot: HierarchyRoot): void {
 
   if (hierarchyRoot.serverCapabilities !== undefined) {
     validateServerCapabilities(hierarchyRoot.serverCapabilities);
+  }
+
+  if (hierarchyRoot.security !== undefined) {
+    validateSecurity(hierarchyRoot.security);
   }
 
   // Check for duplicate namespace IDs
@@ -128,8 +164,111 @@ function validateServerCapabilities(capabilities: ServerCapabilitiesConfig): voi
   }
 }
 
-function validateNamespace(namespace: NamespaceConfig): void {
-  if (!namespace.id || typeof namespace.id !== "number") {
+const securityKeys = ["allowAnonymous", "users"];
+const userKeys = ["username", "password", "passwordSha256", "role"];
+
+function validateSecurity(security: SecurityConfig): void {
+  if (typeof security !== "object" || Array.isArray(security)) {
+    throw new Error("Invalid security: must be an object");
+  }
+
+  for (const key of Object.keys(security)) {
+    if (!securityKeys.includes(key)) {
+      throw new Error(
+        `Invalid security: unknown setting '${key}' (expected one of ${securityKeys.join(
+          ", "
+        )})`
+      );
+    }
+  }
+
+  if (
+    security.allowAnonymous !== undefined &&
+    typeof security.allowAnonymous !== "boolean"
+  ) {
+    throw new Error("Invalid security: allowAnonymous must be a boolean");
+  }
+
+  if (security.users === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(security.users)) {
+    throw new Error("Invalid security: users must be an array");
+  }
+
+  const usernames = new Set<string>();
+
+  security.users.forEach((user) => {
+    validateUser(user);
+
+    if (usernames.has(user.username)) {
+      throw new Error(`Invalid security: duplicate user '${user.username}'`);
+    }
+
+    usernames.add(user.username);
+  });
+}
+
+function validateUser(user: UserConfig): void {
+  if (typeof user !== "object" || user === null || Array.isArray(user)) {
+    throw new Error("Invalid user: must be an object");
+  }
+
+  for (const key of Object.keys(user)) {
+    if (!userKeys.includes(key)) {
+      throw new Error(
+        `Invalid user: unknown setting '${key}' (expected one of ${userKeys.join(
+          ", "
+        )})`
+      );
+    }
+  }
+
+  if (!user.username || typeof user.username !== "string") {
+    throw new Error("Invalid user: missing or invalid username");
+  }
+
+  if (user.password !== undefined && user.passwordSha256 !== undefined) {
+    throw new Error(
+      `Invalid user '${user.username}': specify either password or passwordSha256, not both`
+    );
+  }
+
+  if (user.password !== undefined) {
+    if (typeof user.password !== "string" || user.password.length === 0) {
+      throw new Error(
+        `Invalid user '${user.username}': password must be a non-empty string`
+      );
+    }
+  } else if (user.passwordSha256 !== undefined) {
+    if (
+      typeof user.passwordSha256 !== "string" ||
+      !/^[0-9a-fA-F]{64}$/.test(user.passwordSha256)
+    ) {
+      throw new Error(
+        `Invalid user '${user.username}': passwordSha256 must be a 64 character hex string`
+      );
+    }
+  } else {
+    throw new Error(
+      `Invalid user '${user.username}': either password or passwordSha256 is required`
+    );
+  }
+
+  if (
+    user.role !== undefined &&
+    !userRoleNames.includes(user.role as UserRoleName)
+  ) {
+    throw new Error(
+      `Invalid user '${user.username}': unknown role '${
+        user.role
+      }' (expected one of ${userRoleNames.join(", ")})`
+    );
+  }
+}
+
+function validateNamespace(namespace: NamespaceConfig): void {  if (!namespace.id || typeof namespace.id !== "number") {
     throw new Error("Invalid namespace: missing or invalid id");
   }
   if (!namespace.name || typeof namespace.name !== "string") {
@@ -159,6 +298,8 @@ function validateFolder(folder: FolderConfig): void {
     throw new Error("Invalid folder: missing or invalid name");
   }
 
+  validateRoles(folder.roles, `folder '${folder.name}'`);
+
   if (folder.folders) {
     if (!Array.isArray(folder.folders)) {
       throw new Error("Invalid folder: folders must be an array");
@@ -178,6 +319,8 @@ function validateDevice(device: DeviceConfig): void {
   if (!device.name || typeof device.name !== "string") {
     throw new Error("Invalid device: missing or invalid name");
   }
+
+  validateRoles(device.roles, `device '${device.name}'`);
 
   if (!Array.isArray(device.variables)) {
     throw new Error("Invalid device: variables must be an array");
@@ -199,5 +342,45 @@ function validateVariable(variable: VariableConfig): void {
     throw new Error("Invalid variable: missing or invalid Source");
   }
 
+  validateRoles(variable.roles, `variable '${variable.name}'`);
+
   validateValueSource(variable.source);
+}
+
+/**
+ * Validates the optional list of roles used to restrict access to a node and
+ * everything below it.
+ */
+function validateRoles(roles: NodeRoleName[] | undefined, context: string): void {
+  if (roles === undefined) {
+    return;
+  }
+
+  if (!Array.isArray(roles)) {
+    throw new Error(`Invalid ${context}: roles must be an array`);
+  }
+
+  if (roles.length === 0) {
+    throw new Error(
+      `Invalid ${context}: roles cannot be empty, remove it to inherit access`
+    );
+  }
+
+  const seen = new Set<string>();
+
+  roles.forEach((role) => {
+    if (!nodeRoleNames.includes(role as NodeRoleName)) {
+      throw new Error(
+        `Invalid ${context}: unknown role '${role}' (expected one of ${nodeRoleNames.join(
+          ", "
+        )})`
+      );
+    }
+
+    if (seen.has(role)) {
+      throw new Error(`Invalid ${context}: duplicate role '${role}'`);
+    }
+
+    seen.add(role);
+  });
 }

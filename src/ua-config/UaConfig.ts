@@ -14,8 +14,10 @@ import type {
   FolderConfig,
   HierarchyRoot,
   NamespaceConfig,
+  NodeRoleName,
   VariableConfig
 } from "./ConfigLoader";
+import applyRolePermissions from "./RolePermissions";
 import ValueSourceHandler from "../value-sources/ValueSourceHandler";
 import type { HomeAssistant } from "../home-assistant/HomeAssistant";
 
@@ -64,7 +66,8 @@ async function createOpcUaHierarchy(
         namespaceFolder,
         namespace,
         addressSpace,
-        valueHandler
+        valueHandler,
+        undefined
       );
     }
   } catch (error: any) {
@@ -77,7 +80,8 @@ async function processFolders(
   parentNode: any,
   namespace: Namespace,
   addressSpace: AddressSpace,
-  valueHandler: ValueSourceHandler
+  valueHandler: ValueSourceHandler,
+  inheritedRoles: NodeRoleName[] | undefined
 ) {
   for (const folder of folders) {
     // Create folder node
@@ -86,6 +90,10 @@ async function processFolders(
       nodeId: `ns=${namespace.index};s=${folder.name}`
     });
 
+    // Roles cascade down the hierarchy unless a node declares its own
+    const folderRoles = folder.roles ?? inheritedRoles;
+    applyRolePermissions(folderNode, folderRoles);
+
     // Process nested folders recursively
     if (folder.folders) {
       await processFolders(
@@ -93,7 +101,8 @@ async function processFolders(
         folderNode,
         namespace,
         addressSpace,
-        valueHandler
+        valueHandler,
+        folderRoles
       );
     }
 
@@ -106,6 +115,9 @@ async function processFolders(
           nodeId: `ns=${namespace.index};s=${device.name}`
         });
 
+        const deviceRoles = device.roles ?? folderRoles;
+        applyRolePermissions(deviceNode, deviceRoles);
+
         // Add variables to device
         for (const variable of device.variables) {
           await createVariable(
@@ -113,7 +125,8 @@ async function processFolders(
             variable,
             namespace,
             addressSpace,
-            valueHandler
+            valueHandler,
+            deviceRoles
           );
         }
       }
@@ -126,7 +139,8 @@ async function createVariable(
   variable: VariableConfig,
   namespace: Namespace,
   addressSpace: AddressSpace,
-  valueHandler: ValueSourceHandler
+  valueHandler: ValueSourceHandler,
+  inheritedRoles: NodeRoleName[] | undefined
 ) {
   const dataType = mapDataType(variable.type);
   const nodeId = `ns=${namespace.index};s=${deviceNode.browseName.toString()}.${
@@ -179,6 +193,8 @@ async function createVariable(
       }
     }
   });
+
+  applyRolePermissions(variableNode, variable.roles ?? inheritedRoles);
 
   addressSpace.installHistoricalDataNode(variableNode, {
     maxOnlineValues: 100000,

@@ -1,0 +1,76 @@
+{
+  "security": {
+    "allowAnonymous": true,
+    "users": [
+      { "username": "operator", "password": "operator1", "role": "Operator" },
+      { "username": "viewer", "password": "viewer1" }
+    ]
+  },
+  "namespaces": [
+    {
+      "id": 1,
+      "name": "Simulation",
+      "uri": "urn:simulation:secure",
+      "folders": [
+        {
+          "name": "Public",
+          "devices": [
+            {
+              "name": "Ambient",
+              "variables": [
+                {
+                  "name": "Temperature",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sinWave",
+                    "amplitude": 2.5,
+                    "frequency": 0.0167,
+                    "offset": 22,
+                    "phase": 0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Restricted",
+          "roles": ["Operator"],
+          "devices": [
+            {
+              "name": "Pump",
+              "variables": [
+                {
+                  "name": "Pressure",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sinWave",
+                    "amplitude": 1.5,
+                    "frequency": 0.05,
+                    "offset": 8,
+                    "phase": 0
+                  }
+                },
+                {
+                  "name": "Runtime",
+                  "type": "Double",
+                  "roles": ["AuthenticatedUser"],
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "randomWalk",
+                    "min": 100,
+                    "max": 200,
+                    "stepSize": 0.5,
+                    "updateFrequency": 2
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

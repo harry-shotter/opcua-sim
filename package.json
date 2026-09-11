@@ -12,6 +12,7 @@
   "scripts": {
     "start": "bun run server.ts",
     "start:example": "bun run server.ts examples/sin-func.json",
+    "start:secure": "bun run server.ts examples/secure.json",
     "test": "bun test"
   },
   "devDependencies": {

@@ -10,6 +10,7 @@ A configurable OPC UA server for simulating industrial data. Define your tag hie
 - Multiple value source types for simulation
 - Historical data access with aggregation support
 - Configurable server capabilities (session, subscription and monitored item limits)
+- Username authentication with role based access control per part of the hierarchy
 - Optional Home Assistant integration for real sensor data
 - Docker support
 
@@ -96,8 +97,11 @@ Create a JSON file defining your OPC UA hierarchy:
 | `HASS_URL` | - | Home Assistant URL |
 | `HASS_PORT` | - | Home Assistant port |
 | `HASS_TOKEN` | - | Home Assistant long-lived access token |
+| `UA_ALLOW_ANONYMOUS` | `true` | Allow anonymous sessions |
+| `UA_USERS` | - | Comma separated `username:password` pairs, replaces configured users |
 
-See [Server Capabilities](#server-capabilities) for the limit related environment variables.
+See [Server Capabilities](#server-capabilities) for the limit related environment variables and
+[Authentication](#authentication) for user configuration.
 
 ## Docker
 
@@ -135,6 +139,70 @@ the configuration file alongside `namespaces`:
 Environment variables take precedence over the configuration file. Every value must be a positive
 integer; invalid environment variables are ignored with a warning, while invalid or unknown settings
 in the configuration file are rejected at startup.
+
+## Authentication
+
+By default the server accepts anonymous sessions and has no users, matching the previous behaviour.
+Add a `security` block alongside `namespaces` to define users:
+
+```json
+{
+  "security": {
+    "allowAnonymous": false,
+    "users": [
+      { "username": "operator", "password": "s3cret", "role": "Operator" },
+      { "username": "auditor", "passwordSha256": "2bb80d537b1d...", "role": "Observer" }
+    ]
+  },
+  "namespaces": [ ... ]
+}
+```
+
+Each user needs either `password` (plaintext) or `passwordSha256` (SHA-256 hex digest), never both.
+Passwords are compared as digests in constant time, so a hash is preferable when the configuration
+file is committed. `role` is optional and must be one of `AuthenticatedUser`, `ConfigureAdmin`,
+`Engineer`, `Observer`, `Operator`, `SecurityAdmin` or `Supervisor`; every authenticated session
+holds `AuthenticatedUser` in addition to its configured role.
+
+| Setting | Environment variable | Default |
+|---------|----------------------|---------|
+| `allowAnonymous` | `UA_ALLOW_ANONYMOUS` | `true` |
+| `users` | `UA_USERS` | none |
+
+`UA_USERS` takes the form `alice:secret,bob:hunter2` and **replaces** the configured users rather
+than adding to them. Only the first colon separates the pair, so passwords may contain colons, but
+they cannot contain commas; use the configuration file for anything more involved. Roles cannot be
+set through `UA_USERS`. Disabling anonymous access without any users is rejected at startup, since
+nobody could connect.
+
+> [!WARNING]
+> On a `None` security policy endpoint, passwords are sent in clear text. Use a `Sign & Encrypt`
+> endpoint when authentication matters.
+
+### Restricting Access
+
+Folders, devices and variables accept an optional `roles` list. A node with `roles` can only be
+browsed and read by sessions holding one of those roles, and the restriction cascades to everything
+below it unless a descendant declares its own `roles`:
+
+```json
+{
+  "name": "Restricted",
+  "roles": ["Operator"],
+  "devices": [ ... ]
+}
+```
+
+Nodes without `roles` anywhere above them stay readable by everyone, including anonymous sessions.
+Use `Anonymous` in a list to grant access to unauthenticated sessions, and `AuthenticatedUser` to
+grant it to any logged in user.
+
+Denied nodes are hidden from browse results and return `BadUserAccessDenied` on read and history
+read. Note that browse is resolved per node: a variable that widens access relative to its parent is
+readable directly by node id, but cannot be reached by browsing through the restricted parent.
+
+[`examples/secure.json`](examples/secure.json) demonstrates both, and can be started with
+`bun run start:secure`.
 
 ## History & Aggregation
 

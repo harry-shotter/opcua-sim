@@ -3,6 +3,7 @@ import { HomeAssistant } from "./src/home-assistant/HomeAssistant";
 import ConfigureServer from "./src/ua-config/UaConfig";
 import loadConfig from "./src/ua-config/ConfigLoader";
 import resolveServerCapabilities from "./src/ua-config/ServerCapabilities";
+import resolveSecurity from "./src/ua-config/UserManager";
 
 let homeAssistant: HomeAssistant | undefined = undefined;
 
@@ -29,12 +30,23 @@ if (!configFile) {
 
 console.info("Loading configuration from", configFile);
 const config = await loadConfig(configFile);
+const security = resolveSecurity(config);
+
+console.info(
+  "Authentication:",
+  security.allowAnonymous ? "anonymous allowed" : "anonymous denied",
+  security.users.length > 0
+    ? `- ${security.users.length} configured user(s)`
+    : "- no configured users"
+);
 
 const server = new OPCUAServer({
   port: tryGetPort(4840),
   resourcePath: process.env.UA_RESOURCE_PATH ?? "/",
   alternateHostname: process.env.UA_ALTERNATE_HOST ?? "localhost",
   serverCapabilities: resolveServerCapabilities(config),
+  allowAnonymous: security.allowAnonymous,
+  userManager: security.userManager,
   buildInfo: {
     productName: process.env.UA_PRODUCT_NAME ?? "OPC UA Server",
     buildNumber: "1",
