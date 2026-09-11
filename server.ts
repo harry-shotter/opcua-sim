@@ -40,8 +40,10 @@ console.info(
     : "- no configured users"
 );
 
+const port = tryGetPort(4840);
+
 const server = new OPCUAServer({
-  port: tryGetPort(4840),
+  port: port,
   resourcePath: process.env.UA_RESOURCE_PATH ?? "/",
   alternateHostname: process.env.UA_ALTERNATE_HOST ?? "localhost",
   serverCapabilities: resolveServerCapabilities(config),
@@ -59,15 +61,29 @@ console.info("Initialized server");
 
 await ConfigureServer(config, server, homeAssistant);
 
-server.start(function () {
+server.start(function (err?: Error | null) {
+  if (err || server.endpoints.length === 0) {
+    console.error(
+      `Failed to start server on port ${port}:`,
+      err?.message ?? "no endpoint was opened, is the port already in use?"
+    );
+    process.exit(1);
+  }
+
   console.info("Server is now listening ... ( press CTRL+C to stop)");
-  console.info("port ", server.endpoints[0].port);
-  const endpointUrl = server.endpoints[0].endpointDescriptions()[0].endpointUrl;
+  console.info("port ", server.endpoints[0]!.port);
+  const endpointUrl = server.endpoints[0]!.endpointDescriptions()[0].endpointUrl;
   console.info(" the primary server endpoint url is ", endpointUrl);
 });
 
 function tryGetPort(fallback: number): number {
-  const parsedPort = parseInt(process.env.UA_PORT ?? "");
+  const rawPort = process.env.UA_PORT;
+
+  if (rawPort === undefined || rawPort.trim() === "") {
+    return fallback;
+  }
+
+  const parsedPort = parseInt(rawPort);
 
   if (isNaN(parsedPort) || parsedPort < 0 || parsedPort > 65535) {
     console.warn("Invalid port number, falling back to default port");
