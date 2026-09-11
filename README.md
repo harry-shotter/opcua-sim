@@ -20,6 +20,12 @@ bun install
 bun run server.ts examples/multi-source.json
 ```
 
+Or, to start straight from a ready-made config:
+
+```bash
+bun run start:example
+```
+
 Ready-made configs live in [`examples/`](examples). Connect with any OPC UA client (e.g., UaExpert) at `opc.tcp://localhost:4840`
 
 ## Configuration
