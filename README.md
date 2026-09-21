@@ -345,6 +345,8 @@ returned, and it remains reachable as request `0` until the next read supersedes
 The string is empty when the request is not one this session can still be asked about, and when the
 identified read returned nothing. The sixteen most recent reads of a session are retained.
 
+[`docs/getTotalRecords.md`](docs/getTotalRecords.md) is the client facing specification.
+
 `getTotalRecords` is not part of OPC UA. Set `historyManager` to `false` at the root of the
 configuration to leave it out entirely, which is useful for testing a client against nothing but the
 standard historical event services:
