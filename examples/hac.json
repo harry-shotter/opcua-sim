@@ -46,6 +46,25 @@
                   }
                 }
               ]
+            },
+            {
+              "name": "PIC202",
+              "eventType": "Operator Actions",
+              "eventHistory": "alarms/pic202.json",
+              "variables": [
+                {
+                  "name": "Pressure",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sawtooth",
+                    "amplitude": 2,
+                    "frequency": 0.0083,
+                    "offset": 10,
+                    "phase": 0
+                  }
+                }
+              ]
             }
           ]
         }

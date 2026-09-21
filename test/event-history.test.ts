@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { coerceNodeId, DataType, StatusCodes } from "node-opcua";
+import {
+  AttributeIds,
+  coerceNodeId,
+  DataType,
+  StatusCodes,
+  Variant
+} from "node-opcua";
 import { ReadEventDetails } from "node-opcua-service-history";
+import {
+  FilterOperator,
+  LiteralOperand,
+  SimpleAttributeOperand
+} from "node-opcua-service-filter";
 import loadEventHistory from "../src/ua-config/EventHistoryLoader";
 import installEventHistory from "../src/ua-config/EventHistory";
+import { LastReadRanges } from "../src/ua-config/HistoryManager";
 import type { EventTypeDefinition } from "../src/ua-config/EventTypes";
 
 const eventType: EventTypeDefinition = {
@@ -102,13 +114,57 @@ function selectClauses(...names: string[]) {
   }));
 }
 
+// the namespace is only used to publish the HistoricalEventFilter property
+const namespace = { addVariable: () => undefined } as any;
+
+async function install(records?: Awaited<ReturnType<typeof load>>) {
+  const node = {
+    nodeId: coerceNodeId("ns=2;s=FIC101"),
+    browseName: { name: "FIC101" }
+  } as any;
+  const ranges = new LastReadRanges();
+
+  installEventHistory(
+    node,
+    [{ node, eventType, records: records ?? (await load(sample)) }],
+    namespace,
+    ranges
+  );
+
+  return { node, ranges };
+}
+
 async function historyRead(details: ReadEventDetails) {
-  const records = await load(sample);
-  const node = { nodeId: { toString: () => "ns=2;s=FIC101" } } as any;
+  const { node } = await install();
 
-  installEventHistory(node, eventType, records);
+  return await node.historyRead({}, details, null, null, {});
+}
 
-  return await node.historyRead(null, details, null, null, null);
+/** Builds a where clause of a single element over the given operands. */
+function whereClause(filterOperator: FilterOperator, filterOperands: unknown[]) {
+  return { elements: [{ filterOperator, filterOperands }] };
+}
+
+function field(name: string) {
+  return new SimpleAttributeOperand({
+    browsePath: [{ namespaceIndex: 0, name }],
+    attributeId: AttributeIds.Value
+  });
+}
+
+function literal(dataType: DataType, value: unknown) {
+  return new LiteralOperand({ value: new Variant({ dataType, value }) });
+}
+
+const window = {
+  startTime: new Date("2026-08-07T00:00:00Z"),
+  endTime: new Date("2026-08-07T23:59:59Z")
+};
+
+function messages(result: any): string[] {
+  return (result.historyData?.events ?? []).map(
+    (event: any) => event.eventFields[0].value.text
+  );
 }
 
 describe("event historyRead", () => {
@@ -159,16 +215,34 @@ describe("event historyRead", () => {
   });
 
   test("caps the result at numValuesPerNode", async () => {
+    const { node } = await install();
+
+    const result = await node.historyRead(
+      { session: {} },
+      new ReadEventDetails({
+        ...window,
+        numValuesPerNode: 1,
+        filter: { selectClauses: selectClauses("Message") } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    expect((result.historyData as any).events).toHaveLength(1);
+    expect(result.continuationPoint).toBeInstanceOf(Buffer);
+  });
+
+  test("cannot truncate silently when no continuation point is available", async () => {
     const result = await historyRead(
       new ReadEventDetails({
-        startTime: new Date("2026-08-07T00:00:00Z"),
-        endTime: new Date("2026-08-07T23:59:59Z"),
+        ...window,
         numValuesPerNode: 1,
         filter: { selectClauses: selectClauses("Message") } as any
       })
     );
 
-    expect((result.historyData as any).events).toHaveLength(1);
+    expect(result.statusCode).toBe(StatusCodes.BadNoContinuationPoints);
   });
 
   test("reports GoodNoData for an empty window", async () => {
@@ -228,5 +302,248 @@ describe("event historyRead", () => {
     );
 
     expect(new Set(ids).size).toBe(2);
+  });
+});
+
+describe("continuation points", () => {
+  const paged = new ReadEventDetails({
+    ...window,
+    numValuesPerNode: 1,
+    filter: { selectClauses: selectClauses("Message") } as any
+  });
+
+  test("pages through the result and stops when exhausted", async () => {
+    const { node } = await install();
+    const session = {};
+
+    const first = await node.historyRead({ session }, paged, null, null, {});
+    expect(messages(first)).toEqual(["High"]);
+    expect(first.continuationPoint).toBeInstanceOf(Buffer);
+
+    const second = await node.historyRead({ session }, paged, null, null, {
+      continuationPoint: first.continuationPoint
+    });
+    expect(messages(second)).toEqual(["Normal"]);
+    expect(second.continuationPoint).toBeFalsy();
+  });
+
+  test("rejects a point that was never issued", async () => {
+    const { node } = await install();
+
+    const result = await node.historyRead({ session: {} }, paged, null, null, {
+      continuationPoint: Buffer.alloc(16, 7)
+    });
+
+    expect(result.statusCode).toBe(StatusCodes.BadContinuationPointInvalid);
+  });
+
+  test("rejects a point belonging to another session", async () => {
+    const { node } = await install();
+
+    const first = await node.historyRead({ session: {} }, paged, null, null, {});
+    const result = await node.historyRead({ session: {} }, paged, null, null, {
+      continuationPoint: first.continuationPoint
+    });
+
+    expect(result.statusCode).toBe(StatusCodes.BadContinuationPointInvalid);
+  });
+
+  test("releasing a point discards it without returning data", async () => {
+    const { node } = await install();
+    const session = {};
+
+    const first = await node.historyRead({ session }, paged, null, null, {});
+
+    const released = await node.historyRead({ session }, paged, null, null, {
+      continuationPoint: first.continuationPoint,
+      releaseContinuationPoints: true
+    });
+    expect(released.statusCode).toBe(StatusCodes.Good);
+    expect(released.historyData).toBeFalsy();
+
+    const reused = await node.historyRead({ session }, paged, null, null, {
+      continuationPoint: first.continuationPoint
+    });
+    expect(reused.statusCode).toBe(StatusCodes.BadContinuationPointInvalid);
+  });
+});
+
+describe("where clause", () => {
+  async function filtered(clause: unknown) {
+    return await historyRead(
+      new ReadEventDetails({
+        ...window,
+        filter: {
+          selectClauses: selectClauses("Message"),
+          whereClause: clause
+        } as any
+      })
+    );
+  }
+
+  test("keeps only records greater than a literal", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.GreaterThan, [
+        field("Severity"),
+        literal(DataType.Int32, 500)
+      ])
+    );
+
+    expect(messages(result)).toEqual(["High"]);
+  });
+
+  test("matches a Like pattern", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Like, [
+        field("Message"),
+        literal(DataType.String, "%orma%")
+      ])
+    );
+
+    expect(messages(result)).toEqual(["Normal"]);
+  });
+
+  test("compares for equality on a string field", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Equals, [
+        field("Source"),
+        literal(DataType.String, "FIC101")
+      ])
+    );
+
+    expect(messages(result)).toEqual(["High", "Normal"]);
+  });
+
+  test("drops records whose field the historian cannot supply", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Equals, [
+        field("Operator"),
+        literal(DataType.String, "bob")
+      ])
+    );
+
+    expect(result.statusCode).toBe(StatusCodes.GoodNoData);
+  });
+
+  test("treats an absent field as null", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.IsNull, [field("Operator")])
+    );
+
+    expect(messages(result)).toEqual(["High", "Normal"]);
+  });
+
+  test("rejects an operator it cannot evaluate", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Between, [
+        field("Severity"),
+        literal(DataType.Int32, 0),
+        literal(DataType.Int32, 1000)
+      ])
+    );
+
+    expect(result.statusCode).toBe(StatusCodes.BadEventFilterInvalid);
+  });
+
+  test("rejects an operator given the wrong number of operands", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Equals, [field("Severity")])
+    );
+
+    expect(result.statusCode).toBe(StatusCodes.BadEventFilterInvalid);
+  });
+});
+
+describe("aggregated sources", () => {
+  test("merges records from several nodes in time order", async () => {
+    const records = await load(sample);
+    const parent = {
+      nodeId: coerceNodeId("ns=2;s=Plant"),
+      browseName: { name: "Plant" }
+    } as any;
+    const a = {
+      nodeId: coerceNodeId("ns=2;s=FIC101"),
+      browseName: { name: "FIC101" }
+    } as any;
+    const b = {
+      nodeId: coerceNodeId("ns=2;s=FIC102"),
+      browseName: { name: "FIC102" }
+    } as any;
+
+    installEventHistory(
+      parent,
+      [
+        { node: a, eventType, records: [records[0]!] },
+        { node: b, eventType, records: [records[1]!] }
+      ],
+      namespace,
+      new LastReadRanges()
+    );
+
+    const result = await parent.historyRead(
+      {},
+      new ReadEventDetails({
+        ...window,
+        filter: { selectClauses: selectClauses("SourceName", "Time") } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    expect(
+      result.historyData.events.map((e: any) => e.eventFields[0].value)
+    ).toEqual(["FIC101", "FIC102"]);
+  });
+
+  test("names the source from its node when not configured", async () => {
+    const result = await historyRead(
+      new ReadEventDetails({
+        ...window,
+        filter: { selectClauses: selectClauses("SourceName") } as any
+      })
+    );
+
+    expect(result.historyData.events[0].eventFields[0].value).toBe("FIC101");
+  });
+});
+
+describe("last read range", () => {
+  test("records the span the read returned", async () => {
+    const { node, ranges } = await install();
+    const session = {};
+
+    await node.historyRead(
+      { session },
+      new ReadEventDetails({
+        ...window,
+        filter: { selectClauses: selectClauses("Message") } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    expect(ranges.get(session)!.first.toISOString()).toBe(
+      "2026-08-07T10:15:23.123Z"
+    );
+    expect(ranges.get(session)!.last.toISOString()).toBe(
+      "2026-08-07T11:42:18.456Z"
+    );
+  });
+
+  test("clears the span when a read returns nothing", async () => {
+    const { node, ranges } = await install();
+    const session = {};
+
+    const empty = new ReadEventDetails({
+      startTime: new Date("2020-01-01T00:00:00Z"),
+      endTime: new Date("2020-01-02T00:00:00Z"),
+      filter: { selectClauses: selectClauses("Message") } as any
+    });
+
+    await node.historyRead({ session }, empty, null, null, {});
+
+    expect(ranges.get(session)).toBeUndefined();
   });
 });

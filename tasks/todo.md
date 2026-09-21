@@ -136,11 +136,11 @@ validation, so they cannot drift.
 
 - [x] For each configured type: `namespace.addEventType({ browseName, subtypeOf:
       "BaseEventType" })` plus one property per field with the mapped DataType.
-- [ ] Add `HistoricalEventFilter` (`i=11215`) to each historized notifier node, holding an
+- [x] Add `HistoricalEventFilter` (`i=11215`) to each historized notifier node, holding an
       `EventFilter` whose `selectClauses` enumerate the fields available from history.
-- [ ] Optionally instantiate `HistoricalEventConfigurationType` (`i=32621`) with its
+- [x] Optionally instantiate `HistoricalEventConfigurationType` (`i=32621`) with its
       `EventTypes` folder referencing the configured types.
-- [ ] Tests: browsing yields the configured type/field structure and DataTypes.
+- [x] Tests: browsing yields the configured type/field structure and DataTypes.
 
 ### 3. Select-clause mapping
 
@@ -164,25 +164,28 @@ validation, so they cannot drift.
 
 ### 5. Continuation points
 
-- [ ] Per-session `Map<continuationPoint, { records, filter, offset }>`; opaque ByteString.
-- [ ] Return one when the filtered set exceeds `numValuesPerNode`; resume from `offset`.
-- [ ] Honour `releaseContinuationPoints`; drop state on session close.
-- [ ] Cap outstanding points per session → `BadNoContinuationPoints`.
+- [x] Per-session `Map<continuationPoint, { records, filter, offset }>`; opaque ByteString.
+- [x] Return one when the filtered set exceeds `numValuesPerNode`; resume from `offset`.
+- [x] Honour `releaseContinuationPoints`; state is held in a `WeakMap` keyed by session,
+      so it is collected with the session rather than dropped explicitly.
+- [x] Cap outstanding points per session → `BadNoContinuationPoints`.
 
 ### 6. whereClause (ContentFilter) evaluation
 
 The frontend speaks EQL (5.1.3); the gateway translates it to an OPC UA `ContentFilter`.
 node-opcua's `checkFilter` needs real `IEventData`, so we evaluate over JSON records.
 
-- [ ] Operators: `Equals`, `LessThan`, `GreaterThan`, `LessThanOrEqual`,
+- [x] Operators: `Equals`, `LessThan`, `GreaterThan`, `LessThanOrEqual`,
       `GreaterThanOrEqual`, `Like`, `Not`, `And`, `Or`, `InList`, `IsNull`, `OfType`.
-- [ ] `OfType` matters more now — it selects by event type, which is how the gateway
+- [x] `OfType` matters more now — it selects by event type, which is how the gateway
       scopes a query to one category.
-- [ ] Operands: `SimpleAttributeOperand`, `LiteralOperand`, `ElementOperand`.
-- [ ] `Like` uses `%` / `_` — same semantics as EQL `like` / `contains`.
-- [ ] Unknown field → `BadFilterOperandInvalid` in `filterResult.elementResults`
-      (gateway maps to `FILTER_NOT_SUPPORTED`).
-- [ ] Assumed EQL → ContentFilter shape: `<>` → `Not(Equals)`, `not like` → `Not(Like)`,
+- [x] Operands: `SimpleAttributeOperand`, `LiteralOperand`, `ElementOperand`.
+- [x] `Like` uses `%` / `_` — same semantics as EQL `like` / `contains`.
+- [x] Unevaluable filter → `BadEventFilterInvalid` as the read's status code.
+      **Correction:** `HistoryReadResult` carries no `filterResult`, so there is nowhere
+      to report per-element `BadFilterOperandInvalid`. An unknown *field* is not an error
+      — it resolves to null and simply matches nothing.
+- [x] Assumed EQL → ContentFilter shape: `<>` → `Not(Equals)`, `not like` → `Not(Like)`,
       `contains 'x'` → `Like '%x%'`, `is not null` → `Not(IsNull)`, `in [...]` → `InList`.
 
 ### 7. `getTotalRecords`
@@ -190,12 +193,12 @@ node-opcua's `checkFilter` needs real `IEventData`, so we evaluate over JSON rec
 Hosted on a singleton object, per the spec's client example
 (`session.Call(new NodeId("HistoryManager", 2), new NodeId("getTotalRecords", 2))`).
 
-- [ ] Object `HistoryManager` under `Objects`, nodeId `ns=N;s=HistoryManager`.
-- [ ] `addMethod` `getTotalRecords`, nodeId `ns=N;s=getTotalRecords`, no inputs,
+- [x] Object `HistoryManager` under `Objects`, nodeId `ns=N;s=HistoryManager`.
+- [x] `addMethod` `getTotalRecords`, nodeId `ns=N;s=getTotalRecords`, no inputs,
       one String output. `bindMethod(fn)`.
-- [ ] Per-session `WeakMap<session, { first: Date; last: Date }>` written by the
+- [x] Per-session `WeakMap<session, { first: Date; last: Date }>` written by the
       `historyRead` hook from the page actually returned.
-- [ ] XML per Appendix 4.3 — `ReturnedRange` occurs exactly once:
+- [x] XML per Appendix 4.3 — `ReturnedRange` occurs exactly once:
 
       <HistoryReadResult>
         <ReturnedRange>
@@ -204,8 +207,8 @@ Hosted on a singleton object, per the spec's client example
         </ReturnedRange>
       </HistoryReadResult>
 
-- [ ] ISO 8601 UTC with milliseconds (`xs:dateTime`).
-- [ ] No prior read in session, or empty result → empty string (client tests
+- [x] ISO 8601 UTC with milliseconds (`xs:dateTime`).
+- [x] No prior read in session, or empty result → empty string (client tests
       `string.IsNullOrEmpty`).
 
 Spec notes: the name says "TotalRecords" but the return carries timestamps, not a count;
@@ -213,13 +216,13 @@ the prose says "each page" while the XSD permits one `ReturnedRange`. Following 
 
 ### 8. Verify
 
-- [ ] Unit: type/field validation, record validation, select-clause mapping, all filter
+- [x] Unit: type/field validation, record validation, select-clause mapping, all filter
       operators, `OfType` scoping, time filtering, ordering, `numValuesPerNode`,
       continuation points, empty → `GoodNoData`.
-- [ ] `getTotalRecords`: empty before any read, correct range after, updates on second
+- [x] `getTotalRecords`: empty before any read, correct range after, updates on second
       read, isolated between sessions, validates against the Appendix 4.3 XSD.
-- [ ] Integration: client `historyReadEvent` against a source node, then `getTotalRecords`.
-- [ ] `examples/hac.json` + event history JSON + README section.
+- [x] Integration: client `historyReadEvent` against a source node, then `getTotalRecords`.
+- [x] `examples/hac.json` + event history JSON + README section.
 
 ## Deferred
 
@@ -240,3 +243,49 @@ the prose says "each page" while the XSD permits one `ReturnedRange`. Following 
 - **Event type per node** — one event type per event source node.
 - **Category** — maps to the event type name (A&C uses `EventCategories.FullName`).
 - **`BSTR`** — mapped to `String`, deviating from Table 3‑6. Flag to spec authors.
+
+## Review
+
+All eight steps are implemented and verified end to end against a running server with a
+real OPC UA client.
+
+### What was built
+
+| Module | Role |
+|--------|------|
+| `ConfigLoader.ts` | `eventTypes` on the root, `eventType`/`eventHistory` on folders and devices, with validation |
+| `EventTypes.ts` | ADO to OPC UA type mapping, one `addEventType` per configured type |
+| `EventHistoryLoader.ts` | Loads and validates records against the declared type |
+| `EventHistory.ts` | `historyRead` on notifier objects: aggregation, time window, filtering, paging, `HistoricalEventFilter` |
+| `EventFilter.ts` | `ContentFilter` evaluator over JSON records |
+| `EventContinuationPoints.ts` | Per-session continuation point store |
+| `HistoryManager.ts` | `HistoryManager` object, `getTotalRecords`, per-session last read range |
+
+### Changes to the original plan
+
+- **Event history aggregates up the hierarchy.** Originally only configured source nodes
+  were historized, which meant a read on the Server object or a folder failed - and it
+  failed as a *serviceResult*, killing the whole request including valid nodes alongside
+  it. Parents now merge everything beneath them in time order, matching the usual OPC UA
+  convention that the Server object exposes all events.
+- **`BadEventFilterInvalid` replaces per-element filter results** - `HistoryReadResult`
+  has no `filterResult` field.
+- **`SourceName` falls back to the source node browse name.** Without this, aggregated
+  reads cannot tell you which device an event came from unless the field happens to be
+  configured. UaExpert showed `BadNoData` for it.
+- **`numValuesPerNode` no longer truncates silently.** It pages, and returns
+  `BadNoContinuationPoints` if a point cannot be allocated.
+
+### Verified
+
+103 unit tests pass. End to end against `examples/hac.json` with two devices of different
+event types: Server object and folder each returned all 5 merged events in time order,
+the device returned its own 3, a where clause on `Operator` (a field only one event type
+declares) correctly returned 1, paging with `numValuesPerNode=2` issued and resumed
+continuation points, and `getTotalRecords` returned spec-shaped XML for the last page read.
+
+### Still open
+
+- `order by` and `ci` remain deferred pending the spec authors.
+- `BSTR` to `String` is a deliberate deviation from Table 3-6 and needs flagging.
+- Namespace index is 2, not the 1 the spec asks for; node-opcua claims 1 for itself.

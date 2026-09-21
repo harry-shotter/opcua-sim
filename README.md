@@ -9,6 +9,7 @@ A configurable OPC UA server for simulating industrial data. Define your tag hie
 - JSON-driven configuration for namespaces, folders, devices, and variables
 - Multiple value source types for simulation
 - Historical data access with aggregation support
+- Historical alarms & conditions from a fixed set of event records
 - Configurable server capabilities (session, subscription and monitored item limits)
 - Username authentication with role based access control per part of the hierarchy
 - Optional Home Assistant integration for real sensor data
@@ -221,6 +222,112 @@ the following aggregates:
 `Total` is the time integral over the interval, expressed in value-seconds. `Total` and
 `StandardDeviationSample` return `BadAggregateNotSupported` for non numeric variables, and `Start`
 carries the previous value forward for them rather than interpolating.
+
+## Historical Alarms & Conditions
+
+The server can answer `HistoryRead` for events from a fixed set of records. No alarms are generated
+and no conditions are evaluated - the history is read straight from JSON, in the same spirit as the
+faked historical data above.
+
+Declare the event types at the root of the configuration, then point a folder or device at one along
+with a file of records:
+
+```json
+{
+  "eventTypes": [
+    {
+      "name": "Process Alarms",
+      "fields": [
+        { "name": "Source", "type": "String" },
+        { "name": "Message", "type": "String" },
+        { "name": "Severity", "type": "Int32" },
+        { "name": "ConditionName", "type": "String" }
+      ]
+    }
+  ],
+  "namespaces": [
+    {
+      "id": 1,
+      "name": "Simulation",
+      "uri": "urn:simulation:hac",
+      "folders": [
+        {
+          "name": "Plant",
+          "devices": [
+            {
+              "name": "FIC101",
+              "eventType": "Process Alarms",
+              "eventHistory": "alarms/fic101.json",
+              "variables": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`eventHistory` is resolved relative to the configuration file and holds an array of records:
+
+```json
+[
+  {
+    "time": "2026-08-07T10:15:23.123Z",
+    "fields": {
+      "Source": "FIC101",
+      "Message": "High flow",
+      "Severity": 700,
+      "ConditionName": "HI"
+    }
+  }
+]
+```
+
+Field types are `Boolean`, `Int16`, `UInt16`, `Int32`, `UInt32`, `Float`, `Double`, `DateTime` and
+`String`. Records are validated against the declared type at startup, so a typo fails fast rather
+than producing an empty read.
+
+### Reading the history
+
+Events are readable at every level of the hierarchy. A parent returns everything beneath it, merged
+into time order, so the Server object (`i=2253`) exposes the whole plant:
+
+| Node | Returns |
+|------|---------|
+| `i=2253` | every configured source |
+| `ns=2;s=Plant` | every source in that folder and below |
+| `ns=2;s=FIC101` | that device only |
+
+Each notifier publishes a `HistoricalEventFilter` property listing the fields it can return, which
+is how clients such as UaExpert discover the configured fields. `EventId`, `EventType`, `SourceNode`,
+`SourceName`, `Time` and `ReceiveTime` are always available; `SourceName` falls back to the browse
+name of the originating node when it is not a configured field. A selected field the historian
+cannot supply comes back as `BadNoData` rather than shifting the remaining fields along.
+
+Where clauses support `Equals`, `LessThan`, `GreaterThan`, `LessThanOrEqual`, `GreaterThanOrEqual`,
+`Like`, `Not`, `And`, `Or`, `InList`, `IsNull` and `OfType`. Anything else is rejected with
+`BadEventFilterInvalid`. Results larger than `numValuesPerNode` are paged with continuation points,
+capped at 16 outstanding points per session.
+
+### getTotalRecords
+
+A `HistoryManager` object exposes a `getTotalRecords` method that reports the time span the calling
+session's most recent event read returned, which clients use to paginate:
+
+```
+Object: ns=2;s=HistoryManager
+Method: ns=2;s=getTotalRecords
+```
+
+It takes no arguments and returns a string:
+
+```xml
+<HistoryReadResult><ReturnedRange><FirstTimestamp>2026-08-07T10:15:23.123Z</FirstTimestamp><LastTimestamp>2026-08-07T11:42:18.456Z</LastTimestamp></ReturnedRange></HistoryReadResult>
+```
+
+The string is empty when the session has not yet read any events, or when the last read returned
+nothing.
 
 ## Acknowledgments
 

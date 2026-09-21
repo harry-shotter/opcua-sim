@@ -1,0 +1,18 @@
+[
+  {
+    "time": "2026-08-07T10:31:44.000Z",
+    "fields": {
+      "Source": "PIC202",
+      "Message": "Setpoint changed from 10.0 to 12.5",
+      "Operator": "a.patel"
+    }
+  },
+  {
+    "time": "2026-08-07T12:05:09.250Z",
+    "fields": {
+      "Source": "PIC202",
+      "Message": "Controller switched to manual",
+      "Operator": "j.okafor"
+    }
+  }
+]

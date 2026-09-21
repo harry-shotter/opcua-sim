@@ -20,8 +20,9 @@ import type {
 } from "./ConfigLoader";
 import applyRolePermissions from "./RolePermissions";
 import createEventTypes, { type EventTypeDefinition } from "./EventTypes";
-import installEventHistory from "./EventHistory";
+import installEventHistory, { type EventSource } from "./EventHistory";
 import loadEventHistory from "./EventHistoryLoader";
+import installHistoryManager, { LastReadRanges } from "./HistoryManager";
 import ValueSourceHandler from "../value-sources/ValueSourceHandler";
 import type { HomeAssistant } from "../home-assistant/HomeAssistant";
 
@@ -54,13 +55,17 @@ async function createOpcUaHierarchy(
     installAggregates(addressSpace);
 
     let eventTypes = new Map<string, EventTypeDefinition>();
+    let eventNamespace: Namespace | undefined;
+    const ranges = new LastReadRanges();
+    const allSources: EventSource[] = [];
 
     for (const namespaceConfig of hierarchyRoot.namespaces) {
       // Register the namespace with OPC UA server
       const namespace = addressSpace.registerNamespace(namespaceConfig.uri);
 
       // The event type system is built once, in the first configured namespace
-      if (eventTypes.size === 0) {
+      if (eventNamespace === undefined) {
+        eventNamespace = namespace;
         eventTypes = createEventTypes(hierarchyRoot, namespace);
       }
 
@@ -74,7 +79,7 @@ async function createOpcUaHierarchy(
       );
 
       // Process the folders recursively
-      await processFolders(
+      const sources = await processFolders(
         namespaceConfig.folders,
         namespaceFolder,
         namespace,
@@ -82,8 +87,26 @@ async function createOpcUaHierarchy(
         valueHandler,
         undefined,
         eventTypes,
-        configDirectory
+        configDirectory,
+        ranges
       );
+
+      if (sources.length > 0) {
+        installEventHistory(namespaceFolder, sources, namespace, ranges);
+        allSources.push(...sources);
+      }
+    }
+
+    // The Server object is the conventional place to read every event at once
+    if (allSources.length > 0 && eventNamespace) {
+      installEventHistory(
+        addressSpace.rootFolder.objects.server,
+        allSources,
+        eventNamespace,
+        ranges
+      );
+
+      installHistoryManager(eventNamespace, addressSpace, ranges);
     }
   } catch (error: any) {
     throw new Error(`Failed to create OPC UA hierarchy: ${error.message}`);
@@ -98,8 +121,11 @@ async function processFolders(
   valueHandler: ValueSourceHandler,
   inheritedRoles: NodeRoleName[] | undefined,
   eventTypes: Map<string, EventTypeDefinition>,
-  configDirectory: string
-) {
+  configDirectory: string,
+  ranges: LastReadRanges
+): Promise<EventSource[]> {
+  const collected: EventSource[] = [];
+
   for (const folder of folders) {
     // Create folder node
     const folderNode = namespace.addFolder(parentNode, {
@@ -111,19 +137,34 @@ async function processFolders(
     const folderRoles = folder.roles ?? inheritedRoles;
     applyRolePermissions(folderNode, folderRoles);
 
-    await attachEventHistory(folder, folderNode, eventTypes, configDirectory);
+    // Everything beneath this folder is readable from the folder itself
+    const folderSources: EventSource[] = [];
+
+    const own = await loadEventSource(
+      folder,
+      folderNode,
+      eventTypes,
+      configDirectory
+    );
+
+    if (own) {
+      folderSources.push(own);
+    }
 
     // Process nested folders recursively
     if (folder.folders) {
-      await processFolders(
-        folder.folders,
-        folderNode,
-        namespace,
-        addressSpace,
-        valueHandler,
-        folderRoles,
-        eventTypes,
-        configDirectory
+      folderSources.push(
+        ...(await processFolders(
+          folder.folders,
+          folderNode,
+          namespace,
+          addressSpace,
+          valueHandler,
+          folderRoles,
+          eventTypes,
+          configDirectory,
+          ranges
+        ))
       );
     }
 
@@ -139,12 +180,17 @@ async function processFolders(
         const deviceRoles = device.roles ?? folderRoles;
         applyRolePermissions(deviceNode, deviceRoles);
 
-        await attachEventHistory(
+        const deviceSource = await loadEventSource(
           device,
           deviceNode,
           eventTypes,
           configDirectory
         );
+
+        if (deviceSource) {
+          installEventHistory(deviceNode, [deviceSource], namespace, ranges);
+          folderSources.push(deviceSource);
+        }
 
         // Add variables to device
         for (const variable of device.variables) {
@@ -159,22 +205,28 @@ async function processFolders(
         }
       }
     }
+
+    if (folderSources.length > 0) {
+      installEventHistory(folderNode, folderSources, namespace, ranges);
+      collected.push(...folderSources);
+    }
   }
+
+  return collected;
 }
 
 /**
- * Makes a node a historical event source when it declares an event type and a
- * history file. Validation has already guaranteed the pair is complete and the
- * type is known.
+ * Reads the event history a node declares, if any. Validation has already
+ * guaranteed the pair is complete and the type is known.
  */
-async function attachEventHistory(
+async function loadEventSource(
   config: FolderConfig | DeviceConfig,
   node: any,
   eventTypes: Map<string, EventTypeDefinition>,
   configDirectory: string
-) {
+): Promise<EventSource | undefined> {
   if (config.eventType === undefined || config.eventHistory === undefined) {
-    return;
+    return undefined;
   }
 
   const eventType = eventTypes.get(config.eventType)!;
@@ -183,7 +235,7 @@ async function attachEventHistory(
     eventType
   );
 
-  installEventHistory(node, eventType, records);
+  return { node, eventType, records };
 }
 
 async function createVariable(
