@@ -623,4 +623,92 @@ describe("last read range", () => {
 
     expect(ranges.get(session)!.total).toBe(1);
   });
+
+  test("keeps concurrent reads on one session distinct", async () => {
+    const { node, ranges } = await install(
+      await load([
+        ...sample,
+        {
+          time: "2026-08-07T09:02:11.000Z",
+          fields: { Source: "FIC101", Message: "Low", Severity: 100 }
+        }
+      ])
+    );
+    const session = {};
+
+    const all = await node.historyRead(
+      { session },
+      new ReadEventDetails({
+        ...window,
+        numValuesPerNode: 1,
+        filter: { selectClauses: selectClauses("Message") } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    const filtered = await node.historyRead(
+      { session },
+      new ReadEventDetails({
+        ...window,
+        numValuesPerNode: 1,
+        filter: {
+          selectClauses: selectClauses("Message"),
+          whereClause: whereClause(FilterOperator.GreaterThan, [
+            field("Severity"),
+            literal(DataType.Int32, 200)
+          ])
+        } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    const id = (point: Buffer) => point.readUInt32BE();
+
+    expect(id(all.continuationPoint)).not.toBe(id(filtered.continuationPoint));
+    expect(ranges.get(session, id(all.continuationPoint))!.total).toBe(3);
+    expect(ranges.get(session, id(filtered.continuationPoint))!.total).toBe(2);
+  });
+
+  test("keeps a read's id across its pages", async () => {
+    const { node, ranges } = await install();
+    const session = {};
+
+    const details = new ReadEventDetails({
+      ...window,
+      numValuesPerNode: 1,
+      filter: { selectClauses: selectClauses("Message") } as any
+    });
+
+    const first = await node.historyRead({ session }, details, null, null, {});
+    const requestId = first.continuationPoint.readUInt32BE();
+
+    await node.historyRead({ session }, details, null, null, {
+      continuationPoint: first.continuationPoint
+    });
+
+    // the last page issues no point, so the id has to outlive the read
+    expect(ranges.get(session, requestId)!.total).toBe(2);
+  });
+
+  test("reports nothing for a request the session never made", async () => {
+    const { node, ranges } = await install();
+    const session = {};
+
+    await node.historyRead(
+      { session },
+      new ReadEventDetails({
+        ...window,
+        filter: { selectClauses: selectClauses("Message") } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    expect(ranges.get(session, 99999)).toBeUndefined();
+  });
 });

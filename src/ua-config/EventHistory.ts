@@ -11,7 +11,9 @@ import {
 import { HistoryReadResult, ReadEventDetails } from "node-opcua-service-history";
 import { HistoryEvent, HistoryEventFieldList } from "node-opcua-types";
 import { EventFilter, SimpleAttributeOperand } from "node-opcua-service-filter";
-import ContinuationPoints from "./EventContinuationPoints";
+import ContinuationPoints, {
+  newRequestId
+} from "./EventContinuationPoints";
 import { isWhereClauseSupported, matchesWhereClause } from "./EventFilter";
 import type { LastReadRanges } from "./HistoryManager";
 import type { EventRecord } from "./EventHistoryLoader";
@@ -69,6 +71,7 @@ interface Entry {
 }
 
 interface PendingRead {
+  requestId: number;
   entries: Entry[];
   offset: number;
   selectClauses: SimpleAttributeOperand[];
@@ -127,17 +130,19 @@ export default function installEventHistory(
     }
 
     let pending: PendingRead;
+    let resumed = false;
 
     if (previousPoint && previousPoint.length > 0) {
-      const resumed = points.take(session, previousPoint);
+      const state = points.take(session, previousPoint);
 
-      if (resumed === undefined) {
+      if (state === undefined) {
         return new HistoryReadResult({
           statusCode: StatusCodes.BadContinuationPointInvalid
         });
       }
 
-      pending = resumed;
+      pending = state;
+      resumed = true;
     } else {
       const whereClause = details.filter?.whereClause;
 
@@ -148,6 +153,7 @@ export default function installEventHistory(
       }
 
       pending = {
+        requestId: newRequestId(),
         entries: selectEntries(entries, details).filter((entry) =>
           matchesWhereClause(
             whereClause,
@@ -168,7 +174,10 @@ export default function installEventHistory(
     let nextPoint: Buffer | null = null;
 
     if (offset < pending.entries.length) {
-      nextPoint = points.register(session, { ...pending, offset });
+      nextPoint = points.register(session, pending.requestId, {
+        ...pending,
+        offset
+      });
 
       if (nextPoint === null) {
         return new HistoryReadResult({
@@ -177,8 +186,13 @@ export default function installEventHistory(
       }
     }
 
+    // A read only has an id a client can quote once it has been handed a
+    // continuation point, so single page reads are reachable as the last read
+    const requestId =
+      nextPoint !== null || resumed ? pending.requestId : undefined;
+
     if (page.length === 0) {
-      ranges.clear(session);
+      ranges.clear(session, requestId);
 
       return new HistoryReadResult({
         statusCode: StatusCodes.GoodNoData,
@@ -188,6 +202,7 @@ export default function installEventHistory(
 
     ranges.record(
       session,
+      requestId,
       page[0]!.record.time,
       page[page.length - 1]!.record.time,
       pending.entries.length
