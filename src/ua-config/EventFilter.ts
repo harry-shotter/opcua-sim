@@ -215,7 +215,12 @@ function comparable(variant: Variant | undefined): Comparable {
   return null;
 }
 
-/** Orders two values, or null when either is missing. */
+/**
+ * Orders two values, or null when either is missing. String comparison is
+ * case-insensitive: the source system's query language applies a `ci` modifier
+ * that OPC UA has no equivalent for, so the sim folds case throughout rather
+ * than answering the same query two different ways.
+ */
 function compare(left: Comparable, right: Comparable): number | null {
   if (left === null || right === null) {
     return null;
@@ -225,9 +230,13 @@ function compare(left: Comparable, right: Comparable): number | null {
     return left - right;
   }
 
-  const [a, b] = [String(left), String(right)];
+  const [a, b] = [fold(left), fold(right)];
 
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function fold(value: Comparable): string {
+  return String(value).toLowerCase();
 }
 
 function equals(order: number | null, target: number): boolean | null {
@@ -268,7 +277,8 @@ function or(left: boolean | null, right: boolean | null): boolean | null {
 
 /**
  * OPC UA pattern matching: `%` stands for any run of characters, `_` for a
- * single one, and `\` escapes either.
+ * single one, and `\` escapes either. Matching is case-insensitive, as it is
+ * for the comparison operators.
  */
 function like(value: Comparable, pattern: Comparable): boolean | null {
   if (value === null || pattern === null) {
@@ -300,7 +310,7 @@ function like(value: Comparable, pattern: Comparable): boolean | null {
     expression += escapeRegExp(character);
   }
 
-  return new RegExp(`^${expression}$`, "s").test(String(value));
+  return new RegExp(`^${expression}$`, "is").test(String(value));
 }
 
 function escapeRegExp(value: string): string {

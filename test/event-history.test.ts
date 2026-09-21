@@ -414,6 +414,40 @@ describe("where clause", () => {
     expect(messages(result)).toEqual(["High", "Normal"]);
   });
 
+  test("ignores case when comparing strings", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Equals, [
+        field("Source"),
+        literal(DataType.String, "fic101")
+      ])
+    );
+
+    expect(messages(result)).toEqual(["High", "Normal"]);
+  });
+
+  test("ignores case when matching a Like pattern", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.Like, [
+        field("Message"),
+        literal(DataType.String, "%NORMAL%")
+      ])
+    );
+
+    expect(messages(result)).toEqual(["Normal"]);
+  });
+
+  test("ignores case in an InList comparison", async () => {
+    const result = await filtered(
+      whereClause(FilterOperator.InList, [
+        field("Message"),
+        literal(DataType.String, "nope"),
+        literal(DataType.String, "HIGH")
+      ])
+    );
+
+    expect(messages(result)).toEqual(["High"]);
+  });
+
   test("drops records whose field the historian cannot supply", async () => {
     const result = await filtered(
       whereClause(FilterOperator.Equals, [

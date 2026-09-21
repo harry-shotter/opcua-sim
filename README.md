@@ -310,6 +310,10 @@ Where clauses support `Equals`, `LessThan`, `GreaterThan`, `LessThanOrEqual`, `G
 `BadEventFilterInvalid`. Results larger than `numValuesPerNode` are paged with continuation points,
 capped at 16 outstanding points per session.
 
+String comparison is **case-insensitive** throughout, including `Like` patterns. This deviates from
+OPC UA, which defines `Equals` and `Like` as case-sensitive, and matches the `ci` behaviour of the
+query language the server stands in for.
+
 ### getTotalRecords
 
 A `HistoryManager` object exposes a `getTotalRecords` method that reports the time span the calling

@@ -228,8 +228,6 @@ the prose says "each page" while the XSD permits one `ReturnedRange`. Following 
 
 - **`order by`** — no OPC UA equivalent; `ReadEventDetails` has no ordering parameter.
   TBC with spec authors. Sim orders by time only for now.
-- **`ci`** — no OPC UA equivalent; `Equals`/`Like` are case-sensitive. Assume the gateway
-  normalises case before building the ContentFilter.
 
 ## Unresolved questions
 
@@ -243,6 +241,9 @@ the prose says "each page" while the XSD permits one `ReturnedRange`. Following 
 - **Event type per node** — one event type per event source node.
 - **Category** — maps to the event type name (A&C uses `EventCategories.FullName`).
 - **`BSTR`** — mapped to `String`, deviating from Table 3‑6. Flag to spec authors.
+- **`ci`** — all string comparison is case-insensitive, including `Like`. Deviates from
+  OPC UA, which defines `Equals`/`Like` as case-sensitive; a conformance test for case
+  sensitivity would fail. Chosen so the sim answers `ci` and non-`ci` queries alike.
 
 ## Review
 
@@ -286,6 +287,7 @@ continuation points, and `getTotalRecords` returned spec-shaped XML for the last
 
 ### Still open
 
-- `order by` and `ci` remain deferred pending the spec authors.
+- `order by` remains deferred pending the spec authors.
+- All string filtering is case-insensitive, deviating from OPC UA, to cover EQL's `ci`.
 - `BSTR` to `String` is a deliberate deviation from Table 3-6 and needs flagging.
 - Namespace index is 2, not the 1 the spec asks for; node-opcua claims 1 for itself.
