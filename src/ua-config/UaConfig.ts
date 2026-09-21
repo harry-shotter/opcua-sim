@@ -106,7 +106,11 @@ async function createOpcUaHierarchy(
         ranges
       );
 
-      installHistoryManager(eventNamespace, addressSpace, ranges);
+      // getTotalRecords is not part of OPC UA, so it can be turned off to test
+      // a client against nothing but the standard services
+      if (hierarchyRoot.historyManager !== false) {
+        installHistoryManager(eventNamespace, addressSpace, ranges);
+      }
     }
   } catch (error: any) {
     throw new Error(`Failed to create OPC UA hierarchy: ${error.message}`);

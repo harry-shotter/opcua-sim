@@ -72,6 +72,12 @@ export interface HierarchyRoot {
   serverCapabilities?: ServerCapabilitiesConfig;
   security?: SecurityConfig;
   eventTypes?: EventTypeConfig[];
+  /**
+   * Publishes the HistoryManager object and its getTotalRecords method.
+   * Turn it off to expose nothing but standard OPC UA historical events.
+   * Defaults to true.
+   */
+  historyManager?: boolean;
   namespaces: NamespaceConfig[];
 }
 
@@ -151,6 +157,13 @@ export function validateRoot(hierarchyRoot: HierarchyRoot): void {
 
   if (hierarchyRoot.eventTypes !== undefined) {
     validateEventTypes(hierarchyRoot.eventTypes);
+  }
+
+  if (
+    hierarchyRoot.historyManager !== undefined &&
+    typeof hierarchyRoot.historyManager !== "boolean"
+  ) {
+    throw new Error("Invalid root: historyManager must be a boolean");
   }
 
   // Check for duplicate namespace IDs

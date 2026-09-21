@@ -208,3 +208,21 @@ describe("event source validation", () => {
     ).toThrow(/folder 'Plant': eventType requires a matching eventHistory/);
   });
 });
+
+describe("historyManager validation", () => {
+  test("defaults to enabled when not configured", () => {
+    expect(config().historyManager).toBeUndefined();
+    expect(() => validateRoot(config())).not.toThrow();
+  });
+
+  test("accepts a boolean", () => {
+    expect(() => validateRoot(config({ historyManager: false }))).not.toThrow();
+    expect(() => validateRoot(config({ historyManager: true }))).not.toThrow();
+  });
+
+  test("rejects a non-boolean", () => {
+    expect(() =>
+      validateRoot(config({ historyManager: "no" as any }))
+    ).toThrow(/historyManager must be a boolean/);
+  });
+});

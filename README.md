@@ -333,6 +333,20 @@ It takes no arguments and returns a string:
 The string is empty when the session has not yet read any events, or when the last read returned
 nothing.
 
+`getTotalRecords` is not part of OPC UA. Set `historyManager` to `false` at the root of the
+configuration to leave it out entirely, which is useful for testing a client against nothing but the
+standard historical event services:
+
+```json
+{
+  "historyManager": false,
+  "eventTypes": [],
+  "namespaces": []
+}
+```
+
+Event history itself is unaffected - only the `HistoryManager` object and its method disappear.
+
 ## Acknowledgments
 
 Home Assistant API client adapted from [node-home-assistant](https://github.com/AYapejian/node-home-assistant) by AYapejian.
