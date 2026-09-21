@@ -317,7 +317,7 @@ query language the server stands in for.
 ### getTotalRecords
 
 A `HistoryManager` object exposes a `getTotalRecords` method that reports the time span the calling
-session's most recent event read returned, which clients use to paginate:
+session's most recent event read returned, and how many records that read matched in total:
 
 ```
 Object: ns=2;s=HistoryManager
@@ -327,8 +327,12 @@ Method: ns=2;s=getTotalRecords
 It takes no arguments and returns a string:
 
 ```xml
-<HistoryReadResult><ReturnedRange><FirstTimestamp>2026-08-07T10:15:23.123Z</FirstTimestamp><LastTimestamp>2026-08-07T11:42:18.456Z</LastTimestamp></ReturnedRange></HistoryReadResult>
+<HistoryReadResult><TotalRecords>2</TotalRecords><ReturnedRange><FirstTimestamp>2026-08-07T10:15:23.123Z</FirstTimestamp><LastTimestamp>2026-08-07T11:42:18.456Z</LastTimestamp></ReturnedRange></HistoryReadResult>
 ```
+
+`TotalRecords` counts every record the read matched, not just the page that was returned, so it does
+not change as a client follows continuation points. A client paging at its own page size divides it
+to get a page count. `ReturnedRange` covers only the page the last read returned.
 
 The string is empty when the session has not yet read any events, or when the last read returned
 nothing.

@@ -580,4 +580,47 @@ describe("last read range", () => {
 
     expect(ranges.get(session)).toBeUndefined();
   });
+
+  test("counts every matching record, not just the page returned", async () => {
+    const { node, ranges } = await install();
+    const session = {};
+
+    await node.historyRead(
+      { session },
+      new ReadEventDetails({
+        ...window,
+        numValuesPerNode: 1,
+        filter: { selectClauses: selectClauses("Message") } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    expect(ranges.get(session)!.total).toBe(2);
+  });
+
+  test("counts only the records the where clause matched", async () => {
+    const { node, ranges } = await install();
+    const session = {};
+
+    await node.historyRead(
+      { session },
+      new ReadEventDetails({
+        ...window,
+        filter: {
+          selectClauses: selectClauses("Message"),
+          whereClause: whereClause(FilterOperator.Equals, [
+            field("Severity"),
+            literal(DataType.Int32, 700)
+          ])
+        } as any
+      }),
+      null,
+      null,
+      {}
+    );
+
+    expect(ranges.get(session)!.total).toBe(1);
+  });
 });

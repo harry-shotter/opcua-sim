@@ -9,6 +9,8 @@ import {
 interface ReturnedRange {
   first: Date;
   last: Date;
+  /** Records matching the whole read, not just the page that was returned. */
+  total: number;
 }
 
 /**
@@ -18,9 +20,14 @@ interface ReturnedRange {
 export class LastReadRanges {
   private readonly bySession = new WeakMap<object, ReturnedRange>();
 
-  record(session: object | undefined, first: Date, last: Date): void {
+  record(
+    session: object | undefined,
+    first: Date,
+    last: Date,
+    total: number
+  ): void {
     if (session !== undefined) {
-      this.bySession.set(session, { first, last });
+      this.bySession.set(session, { first, last, total });
     }
   }
 
@@ -38,8 +45,9 @@ export class LastReadRanges {
 
 /**
  * Adds the HistoryManager object and its getTotalRecords method. The method
- * reports the range covered by the calling session's last history read, which
- * clients use to paginate, and an empty string when there has been no read.
+ * reports the range covered by the calling session's last history read and how
+ * many records that read matched in total, which clients use to paginate, and
+ * an empty string when there has been no read.
  */
 export default function installHistoryManager(
   namespace: Namespace,
@@ -59,7 +67,9 @@ export default function installHistoryManager(
     outputArguments: [
       {
         name: "Result",
-        description: { text: "Range covered by the last history read, as XML" },
+        description: {
+          text: "Range and record count of the last history read, as XML"
+        },
         dataType: DataType.String
       }
     ]
@@ -80,9 +90,10 @@ export default function installHistoryManager(
   });
 }
 
-function toXml({ first, last }: ReturnedRange): string {
+function toXml({ first, last, total }: ReturnedRange): string {
   return (
     "<HistoryReadResult>" +
+    `<TotalRecords>${total}</TotalRecords>` +
     "<ReturnedRange>" +
     `<FirstTimestamp>${first.toISOString()}</FirstTimestamp>` +
     `<LastTimestamp>${last.toISOString()}</LastTimestamp>` +

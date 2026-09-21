@@ -189,7 +189,8 @@ export default function installEventHistory(
     ranges.record(
       session,
       page[0]!.record.time,
-      page[page.length - 1]!.record.time
+      page[page.length - 1]!.record.time,
+      pending.entries.length
     );
 
     const events = page.map(
