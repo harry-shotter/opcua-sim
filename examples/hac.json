@@ -1,0 +1,55 @@
+{
+  "eventTypes": [
+    {
+      "name": "Process Alarms",
+      "fields": [
+        { "name": "Source", "type": "String" },
+        { "name": "Message", "type": "String" },
+        { "name": "Severity", "type": "Int32" },
+        { "name": "ConditionName", "type": "String" },
+        { "name": "AckedState", "type": "Boolean" }
+      ]
+    },
+    {
+      "name": "Operator Actions",
+      "fields": [
+        { "name": "Source", "type": "String" },
+        { "name": "Message", "type": "String" },
+        { "name": "Operator", "type": "String" }
+      ]
+    }
+  ],
+  "namespaces": [
+    {
+      "id": 1,
+      "name": "Simulation",
+      "uri": "urn:simulation:hac",
+      "folders": [
+        {
+          "name": "Plant",
+          "devices": [
+            {
+              "name": "FIC101",
+              "eventType": "Process Alarms",
+              "eventHistory": "alarms/fic101.json",
+              "variables": [
+                {
+                  "name": "Flow",
+                  "type": "Double",
+                  "minimumSamplingInterval": 60000,
+                  "source": {
+                    "type": "sinWave",
+                    "amplitude": 5,
+                    "frequency": 0.0167,
+                    "offset": 50,
+                    "phase": 0
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

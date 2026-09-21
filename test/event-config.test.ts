@@ -1,0 +1,210 @@
+import { describe, expect, test } from "bun:test";
+import { validateRoot, type HierarchyRoot } from "../src/ua-config/ConfigLoader";
+
+const eventTypes = [
+  {
+    name: "Process Alarms",
+    fields: [
+      { name: "Source", type: "String" as const },
+      { name: "Severity", type: "Int32" as const }
+    ]
+  }
+];
+
+function config(overrides: Partial<HierarchyRoot> = {}): HierarchyRoot {
+  return {
+    eventTypes,
+    namespaces: [
+      {
+        id: 1,
+        name: "Simulation",
+        uri: "urn:example:simulation",
+        folders: []
+      }
+    ],
+    ...overrides
+  };
+}
+
+function withDevice(device: Record<string, unknown>): HierarchyRoot {
+  return config({
+    namespaces: [
+      {
+        id: 1,
+        name: "Simulation",
+        uri: "urn:example:simulation",
+        folders: [{ name: "Plant", devices: [device as any] }]
+      }
+    ]
+  });
+}
+
+const variables = [
+  {
+    name: "Flow",
+    type: "Double" as const,
+    minimumSamplingInterval: 1000,
+    source: {
+      type: "sinWave" as const,
+      amplitude: 1,
+      frequency: 1,
+      offset: 0,
+      phase: 0
+    }
+  }
+];
+
+describe("eventTypes validation", () => {
+  test("accepts a valid block", () => {
+    expect(() => validateRoot(config())).not.toThrow();
+  });
+
+  test("rejects duplicate type names", () => {
+    expect(() =>
+      validateRoot(config({ eventTypes: [...eventTypes, ...eventTypes] }))
+    ).toThrow(/Duplicate event type found: Process Alarms/);
+  });
+
+  test("rejects unknown type settings", () => {
+    expect(() =>
+      validateRoot(
+        config({ eventTypes: [{ ...eventTypes[0]!, id: 7 } as any] })
+      )
+    ).toThrow(/unknown setting 'id'/);
+  });
+
+  test("rejects an empty field list", () => {
+    expect(() =>
+      validateRoot(config({ eventTypes: [{ name: "Empty", fields: [] }] }))
+    ).toThrow(/fields cannot be empty/);
+  });
+
+  test("rejects duplicate field names", () => {
+    expect(() =>
+      validateRoot(
+        config({
+          eventTypes: [
+            {
+              name: "Process Alarms",
+              fields: [
+                { name: "Source", type: "String" },
+                { name: "Source", type: "String" }
+              ]
+            }
+          ]
+        })
+      )
+    ).toThrow(/duplicate field 'Source'/);
+  });
+
+  test("rejects unknown field types", () => {
+    expect(() =>
+      validateRoot(
+        config({
+          eventTypes: [
+            {
+              name: "Process Alarms",
+              fields: [{ name: "Source", type: "ByteString" as any }]
+            }
+          ]
+        })
+      )
+    ).toThrow(/unknown type 'ByteString'/);
+  });
+
+  test("accepts every supported field type", () => {
+    const types = [
+      "Boolean",
+      "Int16",
+      "UInt16",
+      "Int32",
+      "UInt32",
+      "Float",
+      "Double",
+      "DateTime",
+      "String"
+    ] as const;
+
+    expect(() =>
+      validateRoot(
+        config({
+          eventTypes: [
+            {
+              name: "All",
+              fields: types.map((type) => ({ name: type, type }))
+            }
+          ]
+        })
+      )
+    ).not.toThrow();
+  });
+});
+
+describe("event source validation", () => {
+  test("accepts a node declaring both keys", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          eventType: "Process Alarms",
+          eventHistory: "alarms/fic101.json",
+          variables
+        })
+      )
+    ).not.toThrow();
+  });
+
+  test("rejects eventHistory without eventType", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          eventHistory: "alarms/fic101.json",
+          variables
+        })
+      )
+    ).toThrow(/eventHistory requires a matching eventType/);
+  });
+
+  test("rejects eventType without eventHistory", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          eventType: "Process Alarms",
+          variables
+        })
+      )
+    ).toThrow(/eventType requires a matching eventHistory/);
+  });
+
+  test("rejects an undeclared event type", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          eventType: "Operator Actions",
+          eventHistory: "alarms/fic101.json",
+          variables
+        })
+      )
+    ).toThrow(/unknown eventType 'Operator Actions'/);
+  });
+
+  test("applies to folders as well as devices", () => {
+    expect(() =>
+      validateRoot(
+        config({
+          namespaces: [
+            {
+              id: 1,
+              name: "Simulation",
+              uri: "urn:example:simulation",
+              folders: [{ name: "Plant", eventType: "Process Alarms" }]
+            }
+          ]
+        })
+      )
+    ).toThrow(/folder 'Plant': eventType requires a matching eventHistory/);
+  });
+});

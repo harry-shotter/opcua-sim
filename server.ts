@@ -1,4 +1,5 @@
 import { OPCUAServer } from "node-opcua";
+import { dirname } from "node:path";
 import { HomeAssistant } from "./src/home-assistant/HomeAssistant";
 import ConfigureServer from "./src/ua-config/UaConfig";
 import loadConfig from "./src/ua-config/ConfigLoader";
@@ -59,7 +60,7 @@ const server = new OPCUAServer({
 await server.initialize();
 console.info("Initialized server");
 
-await ConfigureServer(config, server, homeAssistant);
+await ConfigureServer(config, server, homeAssistant, dirname(configFile));
 
 server.start(function (err?: Error | null) {
   if (err || server.endpoints.length === 0) {

@@ -1,0 +1,32 @@
+[
+  {
+    "time": "2026-08-07T10:15:23.123Z",
+    "fields": {
+      "Source": "FIC101",
+      "Message": "High flow",
+      "Severity": 700,
+      "ConditionName": "HI",
+      "AckedState": false
+    }
+  },
+  {
+    "time": "2026-08-07T10:47:02.000Z",
+    "fields": {
+      "Source": "FIC101",
+      "Message": "High high flow",
+      "Severity": 900,
+      "ConditionName": "HI_HI",
+      "AckedState": false
+    }
+  },
+  {
+    "time": "2026-08-07T11:42:18.456Z",
+    "fields": {
+      "Source": "FIC101",
+      "Message": "Flow returned to normal",
+      "Severity": 250,
+      "ConditionName": "NORMAL",
+      "AckedState": true
+    }
+  }
+]

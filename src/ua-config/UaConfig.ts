@@ -8,6 +8,7 @@ import {
   type OPCUAServer
 } from "node-opcua";
 import { installAggregateConfigurationOptions } from "node-opcua-aggregates";
+import { join } from "node:path";
 import installAggregates from "./Aggregates";
 import type {
   DeviceConfig,
@@ -18,17 +19,21 @@ import type {
   VariableConfig
 } from "./ConfigLoader";
 import applyRolePermissions from "./RolePermissions";
+import createEventTypes, { type EventTypeDefinition } from "./EventTypes";
+import installEventHistory from "./EventHistory";
+import loadEventHistory from "./EventHistoryLoader";
 import ValueSourceHandler from "../value-sources/ValueSourceHandler";
 import type { HomeAssistant } from "../home-assistant/HomeAssistant";
 
 export default async function ConfigureServer(
   hierarchy: HierarchyRoot,
   server: OPCUAServer,
-  haClient?: HomeAssistant
+  haClient?: HomeAssistant,
+  configDirectory = "."
 ): Promise<OPCUAServer> {
   const valueHandler = new ValueSourceHandler(haClient);
 
-  await createOpcUaHierarchy(hierarchy, server, valueHandler);
+  await createOpcUaHierarchy(hierarchy, server, valueHandler, configDirectory);
 
   return server;
 }
@@ -36,7 +41,8 @@ export default async function ConfigureServer(
 async function createOpcUaHierarchy(
   hierarchyRoot: HierarchyRoot,
   server: OPCUAServer,
-  valueHandler: ValueSourceHandler
+  valueHandler: ValueSourceHandler,
+  configDirectory: string
 ) {
   try {
     const addressSpace = server.engine.addressSpace;
@@ -47,9 +53,16 @@ async function createOpcUaHierarchy(
     // Enable aggregation support
     installAggregates(addressSpace);
 
+    let eventTypes = new Map<string, EventTypeDefinition>();
+
     for (const namespaceConfig of hierarchyRoot.namespaces) {
       // Register the namespace with OPC UA server
       const namespace = addressSpace.registerNamespace(namespaceConfig.uri);
+
+      // The event type system is built once, in the first configured namespace
+      if (eventTypes.size === 0) {
+        eventTypes = createEventTypes(hierarchyRoot, namespace);
+      }
 
       // Create a folder for this namespace
       const namespaceFolder = namespace.addFolder(
@@ -67,7 +80,9 @@ async function createOpcUaHierarchy(
         namespace,
         addressSpace,
         valueHandler,
-        undefined
+        undefined,
+        eventTypes,
+        configDirectory
       );
     }
   } catch (error: any) {
@@ -81,7 +96,9 @@ async function processFolders(
   namespace: Namespace,
   addressSpace: AddressSpace,
   valueHandler: ValueSourceHandler,
-  inheritedRoles: NodeRoleName[] | undefined
+  inheritedRoles: NodeRoleName[] | undefined,
+  eventTypes: Map<string, EventTypeDefinition>,
+  configDirectory: string
 ) {
   for (const folder of folders) {
     // Create folder node
@@ -94,6 +111,8 @@ async function processFolders(
     const folderRoles = folder.roles ?? inheritedRoles;
     applyRolePermissions(folderNode, folderRoles);
 
+    await attachEventHistory(folder, folderNode, eventTypes, configDirectory);
+
     // Process nested folders recursively
     if (folder.folders) {
       await processFolders(
@@ -102,7 +121,9 @@ async function processFolders(
         namespace,
         addressSpace,
         valueHandler,
-        folderRoles
+        folderRoles,
+        eventTypes,
+        configDirectory
       );
     }
 
@@ -118,6 +139,13 @@ async function processFolders(
         const deviceRoles = device.roles ?? folderRoles;
         applyRolePermissions(deviceNode, deviceRoles);
 
+        await attachEventHistory(
+          device,
+          deviceNode,
+          eventTypes,
+          configDirectory
+        );
+
         // Add variables to device
         for (const variable of device.variables) {
           await createVariable(
@@ -132,6 +160,30 @@ async function processFolders(
       }
     }
   }
+}
+
+/**
+ * Makes a node a historical event source when it declares an event type and a
+ * history file. Validation has already guaranteed the pair is complete and the
+ * type is known.
+ */
+async function attachEventHistory(
+  config: FolderConfig | DeviceConfig,
+  node: any,
+  eventTypes: Map<string, EventTypeDefinition>,
+  configDirectory: string
+) {
+  if (config.eventType === undefined || config.eventHistory === undefined) {
+    return;
+  }
+
+  const eventType = eventTypes.get(config.eventType)!;
+  const records = await loadEventHistory(
+    join(configDirectory, config.eventHistory),
+    eventType
+  );
+
+  installEventHistory(node, eventType, records);
 }
 
 async function createVariable(

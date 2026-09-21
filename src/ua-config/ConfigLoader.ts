@@ -12,6 +12,8 @@ export interface DeviceConfig {
   name: string;
   variables: VariableConfig[];
   roles?: NodeRoleName[];
+  eventType?: string;
+  eventHistory?: string;
 }
 
 export interface FolderConfig {
@@ -19,6 +21,8 @@ export interface FolderConfig {
   folders?: FolderConfig[];
   devices?: DeviceConfig[];
   roles?: NodeRoleName[];
+  eventType?: string;
+  eventHistory?: string;
 }
 
 export interface NamespaceConfig {
@@ -67,7 +71,37 @@ export interface SecurityConfig {
 export interface HierarchyRoot {
   serverCapabilities?: ServerCapabilitiesConfig;
   security?: SecurityConfig;
+  eventTypes?: EventTypeConfig[];
   namespaces: NamespaceConfig[];
+}
+
+/**
+ * OPC UA data types an event field may take, per the Exaquantum ADO to OPC UA
+ * conversion table. `BSTR` is mapped to String rather than ByteString so that
+ * text comparisons in an event filter remain possible.
+ */
+export const eventFieldTypeNames = [
+  "Boolean",
+  "Int16",
+  "UInt16",
+  "Int32",
+  "UInt32",
+  "Float",
+  "Double",
+  "DateTime",
+  "String"
+] as const;
+
+export type EventFieldTypeName = (typeof eventFieldTypeNames)[number];
+
+export interface EventFieldConfig {
+  name: string;
+  type: EventFieldTypeName;
+}
+
+export interface EventTypeConfig {
+  name: string;
+  fields: EventFieldConfig[];
 }
 
 export const serverCapabilityKeys = [
@@ -115,6 +149,10 @@ export function validateRoot(hierarchyRoot: HierarchyRoot): void {
     validateSecurity(hierarchyRoot.security);
   }
 
+  if (hierarchyRoot.eventTypes !== undefined) {
+    validateEventTypes(hierarchyRoot.eventTypes);
+  }
+
   // Check for duplicate namespace IDs
   const namespaceIds = new Set();
   hierarchyRoot.namespaces.forEach((namespace: NamespaceConfig) => {
@@ -133,7 +171,146 @@ export function validateRoot(hierarchyRoot: HierarchyRoot): void {
     namespaceUris.add(namespace.uri);
   });
 
-  hierarchyRoot.namespaces.forEach(validateNamespace);
+  const eventTypeNames = new Set(
+    (hierarchyRoot.eventTypes ?? []).map((eventType) => eventType.name)
+  );
+
+  hierarchyRoot.namespaces.forEach((namespace) =>
+    validateNamespace(namespace, eventTypeNames)
+  );
+}
+
+const eventTypeKeys = ["name", "fields"];
+const eventFieldKeys = ["name", "type"];
+
+function validateEventTypes(eventTypes: EventTypeConfig[]): void {
+  if (!Array.isArray(eventTypes)) {
+    throw new Error("Invalid eventTypes: must be an array");
+  }
+
+  const names = new Set<string>();
+
+  eventTypes.forEach((eventType) => {
+    if (
+      typeof eventType !== "object" ||
+      eventType === null ||
+      Array.isArray(eventType)
+    ) {
+      throw new Error("Invalid event type: must be an object");
+    }
+
+    for (const key of Object.keys(eventType)) {
+      if (!eventTypeKeys.includes(key)) {
+        throw new Error(
+          `Invalid event type: unknown setting '${key}' (expected one of ${eventTypeKeys.join(
+            ", "
+          )})`
+        );
+      }
+    }
+
+    if (!eventType.name || typeof eventType.name !== "string") {
+      throw new Error("Invalid event type: missing or invalid name");
+    }
+
+    if (names.has(eventType.name)) {
+      throw new Error(`Duplicate event type found: ${eventType.name}`);
+    }
+
+    names.add(eventType.name);
+
+    validateEventFields(eventType);
+  });
+}
+
+function validateEventFields(eventType: EventTypeConfig): void {
+  if (!Array.isArray(eventType.fields)) {
+    throw new Error(
+      `Invalid event type '${eventType.name}': fields must be an array`
+    );
+  }
+
+  if (eventType.fields.length === 0) {
+    throw new Error(
+      `Invalid event type '${eventType.name}': fields cannot be empty`
+    );
+  }
+
+  const fieldNames = new Set<string>();
+
+  eventType.fields.forEach((field) => {
+    if (typeof field !== "object" || field === null || Array.isArray(field)) {
+      throw new Error(
+        `Invalid event type '${eventType.name}': field must be an object`
+      );
+    }
+
+    for (const key of Object.keys(field)) {
+      if (!eventFieldKeys.includes(key)) {
+        throw new Error(
+          `Invalid event type '${eventType.name}': unknown field setting '${key}' (expected one of ${eventFieldKeys.join(
+            ", "
+          )})`
+        );
+      }
+    }
+
+    if (!field.name || typeof field.name !== "string") {
+      throw new Error(
+        `Invalid event type '${eventType.name}': missing or invalid field name`
+      );
+    }
+
+    if (fieldNames.has(field.name)) {
+      throw new Error(
+        `Invalid event type '${eventType.name}': duplicate field '${field.name}'`
+      );
+    }
+
+    fieldNames.add(field.name);
+
+    if (!eventFieldTypeNames.includes(field.type as EventFieldTypeName)) {
+      throw new Error(
+        `Invalid event type '${eventType.name}': field '${
+          field.name
+        }' has unknown type '${field.type}' (expected one of ${eventFieldTypeNames.join(
+          ", "
+        )})`
+      );
+    }
+  });
+}
+
+/**
+ * An event source node exposes exactly one event type, so both keys must be
+ * present together and the type must have been declared at the root.
+ */
+function validateEventSource(
+  node: FolderConfig | DeviceConfig,
+  context: string,
+  eventTypeNames: Set<string>
+): void {
+  if (node.eventType === undefined && node.eventHistory === undefined) {
+    return;
+  }
+
+  if (typeof node.eventType !== "string" || node.eventType.length === 0) {
+    throw new Error(
+      `Invalid ${context}: eventHistory requires a matching eventType`
+    );
+  }
+
+  if (typeof node.eventHistory !== "string" || node.eventHistory.length === 0) {
+    throw new Error(
+      `Invalid ${context}: eventType requires a matching eventHistory`
+    );
+  }
+
+  if (!eventTypeNames.has(node.eventType)) {
+    throw new Error(
+      `Invalid ${context}: unknown eventType '${node.eventType}'`
+    );
+  }
 }
 
 function validateServerCapabilities(capabilities: ServerCapabilitiesConfig): void {
@@ -268,7 +445,10 @@ function validateUser(user: UserConfig): void {
   }
 }
 
-function validateNamespace(namespace: NamespaceConfig): void {  if (!namespace.id || typeof namespace.id !== "number") {
+function validateNamespace(
+  namespace: NamespaceConfig,
+  eventTypeNames: Set<string>
+): void {  if (!namespace.id || typeof namespace.id !== "number") {
     throw new Error("Invalid namespace: missing or invalid id");
   }
   if (!namespace.name || typeof namespace.name !== "string") {
@@ -290,37 +470,49 @@ function validateNamespace(namespace: NamespaceConfig): void {  if (!namespace.i
     );
   }
 
-  namespace.folders.forEach(validateFolder);
+  namespace.folders.forEach((folder) =>
+    validateFolder(folder, eventTypeNames)
+  );
 }
 
-function validateFolder(folder: FolderConfig): void {
+function validateFolder(
+  folder: FolderConfig,
+  eventTypeNames: Set<string>
+): void {
   if (!folder.name || typeof folder.name !== "string") {
     throw new Error("Invalid folder: missing or invalid name");
   }
 
   validateRoles(folder.roles, `folder '${folder.name}'`);
+  validateEventSource(folder, `folder '${folder.name}'`, eventTypeNames);
 
   if (folder.folders) {
     if (!Array.isArray(folder.folders)) {
       throw new Error("Invalid folder: folders must be an array");
     }
-    folder.folders.forEach(validateFolder);
+    folder.folders.forEach((child) => validateFolder(child, eventTypeNames));
   }
 
   if (folder.devices) {
     if (!Array.isArray(folder.devices)) {
       throw new Error("Invalid folder: devices must be an array");
     }
-    folder.devices.forEach(validateDevice);
+    folder.devices.forEach((device) =>
+      validateDevice(device, eventTypeNames)
+    );
   }
 }
 
-function validateDevice(device: DeviceConfig): void {
+function validateDevice(
+  device: DeviceConfig,
+  eventTypeNames: Set<string>
+): void {
   if (!device.name || typeof device.name !== "string") {
     throw new Error("Invalid device: missing or invalid name");
   }
 
   validateRoles(device.roles, `device '${device.name}'`);
+  validateEventSource(device, `device '${device.name}'`, eventTypeNames);
 
   if (!Array.isArray(device.variables)) {
     throw new Error("Invalid device: variables must be an array");
