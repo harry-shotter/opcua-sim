@@ -1,5 +1,16 @@
 # Faked Historical Alarms & Conditions (HA&C)
 
+## Tag Metadata
+
+- [x] Add optional variable `description`, `engineeringRange`, and string `units` configuration.
+- [x] Validate metadata types, finite ascending ranges, and numeric-type restrictions.
+- [x] Publish standard OPC UA Description, EURange, and EngineeringUnits properties.
+- [x] Add validation and address-space tests; document the JSON shape.
+
+### Review
+
+- [x] `bunx tsc --noEmit` and `bun test` pass (115 tests).
+
 Stand-in for the Exaquantum HA&C server. Mirrors the existing HDA approach: no live
 alarms, no event generation — history reads are answered from static config.
 

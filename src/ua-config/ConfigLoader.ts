@@ -5,7 +5,15 @@ export interface VariableConfig {
   type: "Boolean" | "DateTime" | "Double" | "Int32" | "String";
   source: ValueSource;
   minimumSamplingInterval: number;
+  description?: string;
+  engineeringRange?: EngineeringRangeConfig;
+  units?: string;
   roles?: NodeRoleName[];
+}
+
+export interface EngineeringRangeConfig {
+  low: number;
+  high: number;
 }
 
 export interface DeviceConfig {
@@ -121,6 +129,7 @@ export const serverCapabilityKeys = [
 export type ServerCapabilityKey = (typeof serverCapabilityKeys)[number];
 
 const validTypes = ["Boolean", "DateTime", "Double", "Int32", "String"];
+const numericVariableTypes = ["Double", "Int32"];
 
 export default async function loadConfig(
   filePath: string
@@ -548,8 +557,54 @@ function validateVariable(variable: VariableConfig): void {
   }
 
   validateRoles(variable.roles, `variable '${variable.name}'`);
+  validateVariableMetadata(variable);
 
   validateValueSource(variable.source);
+}
+
+function validateVariableMetadata(variable: VariableConfig): void {
+  const context = `variable '${variable.name}'`;
+
+  if (
+    variable.description !== undefined &&
+    typeof variable.description !== "string"
+  ) {
+    throw new Error(`Invalid ${context}: description must be a string`);
+  }
+
+  if (variable.engineeringRange !== undefined) {
+    if (!numericVariableTypes.includes(variable.type)) {
+      throw new Error(
+        `Invalid ${context}: engineeringRange is only supported for numeric variables`
+      );
+    }
+
+    const range = variable.engineeringRange;
+    if (
+      typeof range !== "object" ||
+      range === null ||
+      Array.isArray(range) ||
+      !Number.isFinite(range.low) ||
+      !Number.isFinite(range.high) ||
+      range.low >= range.high
+    ) {
+      throw new Error(
+        `Invalid ${context}: engineeringRange must have finite low and high values where low is less than high`
+      );
+    }
+  }
+
+  if (variable.units !== undefined) {
+    if (typeof variable.units !== "string" || variable.units.length === 0) {
+      throw new Error(`Invalid ${context}: units must be a non-empty string`);
+    }
+
+    if (variable.engineeringRange === undefined) {
+      throw new Error(
+        `Invalid ${context}: units requires an engineeringRange`
+      );
+    }
+  }
 }
 
 /**

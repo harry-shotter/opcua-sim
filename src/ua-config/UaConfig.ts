@@ -7,6 +7,7 @@ import {
   type Namespace,
   type OPCUAServer
 } from "node-opcua";
+import type { CallbackT } from "node-opcua-status-code";
 import { installAggregateConfigurationOptions } from "node-opcua-aggregates";
 import { join } from "node:path";
 import installAggregates from "./Aggregates";
@@ -257,15 +258,16 @@ async function createVariable(
 
   await valueHandler.getValue(variable.name, variable.source);
 
-  const variableNode = namespace.addVariable({
+  const variableOptions = {
     componentOf: deviceNode,
     browseName: variable.name,
     dataType: dataType,
     nodeId: nodeId,
+    description: variable.description,
     // historizing: true,
     minimumSamplingInterval: variable.minimumSamplingInterval,
     value: {
-      refreshFunc: async (callback) => {
+      refreshFunc: async (callback: CallbackT<DataValue>) => {
         try {
           const value = await valueHandler.getValue(
             variable.name,
@@ -300,7 +302,25 @@ async function createVariable(
         }
       }
     }
-  });
+  };
+
+  const variableNode =
+    variable.engineeringRange === undefined
+      ? namespace.addVariable(variableOptions)
+      : namespace.addAnalogDataItem({
+          ...variableOptions,
+          engineeringUnitsRange: variable.engineeringRange,
+          ...(variable.units === undefined
+            ? {}
+            : {
+                engineeringUnits: {
+                  namespaceUri:
+                    "http://www.opcfoundation.org/UA/units/un/cefact",
+                  unitId: 0,
+                  displayName: { text: variable.units }
+                }
+              })
+        });
 
   applyRolePermissions(variableNode, variable.roles ?? inheritedRoles);
 

@@ -226,3 +226,85 @@ describe("historyManager validation", () => {
     ).toThrow(/historyManager must be a boolean/);
   });
 });
+
+describe("variable metadata validation", () => {
+  test("accepts description, engineering range and units on numeric variables", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          variables: [
+            {
+              ...variables[0],
+              description: "Feed flow",
+              engineeringRange: { low: 0, high: 100 },
+              units: "L/min"
+            }
+          ]
+        })
+      )
+    ).not.toThrow();
+  });
+
+  test("accepts description on any variable type", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "Mode",
+          variables: [
+            {
+              name: "State",
+              type: "String",
+              minimumSamplingInterval: 1000,
+              description: "Current operating state",
+              source: { type: "homeAssistant", entityId: "sensor.operating_state" }
+            }
+          ]
+        })
+      )
+    ).not.toThrow();
+  });
+
+  test("rejects an engineering range on a non-numeric variable", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "Mode",
+          variables: [
+            {
+              name: "State",
+              type: "String",
+              minimumSamplingInterval: 1000,
+              engineeringRange: { low: 0, high: 1 },
+              source: { type: "homeAssistant", entityId: "sensor.operating_state" }
+            }
+          ]
+        })
+      )
+    ).toThrow(/engineeringRange is only supported for numeric variables/);
+  });
+
+  test("rejects invalid engineering ranges", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          variables: [
+            { ...variables[0], engineeringRange: { low: 100, high: 0 } }
+          ]
+        })
+      )
+    ).toThrow(/engineeringRange must have finite low and high values/);
+  });
+
+  test("requires a range when units are configured", () => {
+    expect(() =>
+      validateRoot(
+        withDevice({
+          name: "FIC101",
+          variables: [{ ...variables[0], units: "L/min" }]
+        })
+      )
+    ).toThrow(/units requires an engineeringRange/);
+  });
+});

@@ -15,6 +15,12 @@
                   "name": "Temperature",
                   "type": "Double",
                   "minimumSamplingInterval": 60000,
+                  "description": "Room 1 ambient temperature",
+                  "engineeringRange": {
+                    "low": -40,
+                    "high": 80
+                  },
+                  "units": "degC",
                   "source": {
                     "type": "sinWave",
                     "amplitude": 2.5,

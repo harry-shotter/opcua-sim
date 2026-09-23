@@ -52,6 +52,9 @@ Create a JSON file defining your OPC UA hierarchy:
                   "name": "Temperature",
                   "type": "Double",
                   "minimumSamplingInterval": 1000,
+                  "description": "Outlet temperature",
+                  "engineeringRange": { "low": -40, "high": 150 },
+                  "units": "degC",
                   "source": {
                     "type": "sinWave",
                     "amplitude": 5,
@@ -72,6 +75,18 @@ Create a JSON file defining your OPC UA hierarchy:
 ### Variable Types
 
 `Boolean`, `DateTime`, `Double`, `Int32`, `String`
+
+### Tag Metadata
+
+Variables can optionally include a `description`, an `engineeringRange`, and `units`.
+The server publishes these as the standard OPC UA `Description`, `EURange`, and
+`EngineeringUnits` attributes/properties. `engineeringRange` and `units` apply only to
+`Double` and `Int32` variables. A range has finite `low` and `high` values where `low`
+is less than `high`; `units` requires a range.
+
+`units` is a display string (for example, `"degC"`, `"psi"`, or `"L/min"`). It is
+published with the UN/CEFACT units namespace and neutral unit ID, so clients should use
+the display text rather than treat it as a canonical unit code.
 
 ### Value Sources
 
