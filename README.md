@@ -331,22 +331,36 @@ query language the server stands in for.
 
 ### getTotalRecords
 
-A `HistoryManager` object exposes a `getTotalRecords` method that reports the time span the calling
-session's most recent event read returned, which clients use to paginate:
+A `HistoryManager` object exposes a `getTotalRecords` method that reports the time span an event
+read returned, and how many records that read matched in total:
 
 ```
 Object: ns=2;s=HistoryManager
 Method: ns=2;s=getTotalRecords
 ```
 
-It takes no arguments and returns a string:
+It takes one argument, `RequestId` (`UInt32`), identifying which read to report on. OPC UA has no
+request handle a client can quote, so the continuation point serves as one: it is a four byte value
+that is simply the request id, and it stays the same for every page of a read. Read it off the
+`HistoryReadResult` and pass it back in. Passing `0` asks about the session's most recent read.
 
 ```xml
-<HistoryReadResult><ReturnedRange><FirstTimestamp>2026-08-07T10:15:23.123Z</FirstTimestamp><LastTimestamp>2026-08-07T11:42:18.456Z</LastTimestamp></ReturnedRange></HistoryReadResult>
+<HistoryReadResult><TotalRecords>2</TotalRecords><ReturnedRange><FirstTimestamp>2026-08-07T10:15:23.123Z</FirstTimestamp><LastTimestamp>2026-08-07T11:42:18.456Z</LastTimestamp></ReturnedRange></HistoryReadResult>
 ```
 
-The string is empty when the session has not yet read any events, or when the last read returned
-nothing.
+`TotalRecords` counts every record the read matched, not just the page that was returned, so it does
+not change as a client follows continuation points. A client paging at its own page size divides it
+to get a page count. `ReturnedRange` covers only the page the last read returned.
+
+Quoting a request id is what keeps concurrent reads apart, so a session running several queries with
+different filters at once can still get the total for each. A read whose results fit in a single page
+is never given a continuation point, and so has no id - its total is the number of events it
+returned, and it remains reachable as request `0` until the next read supersedes it.
+
+The string is empty when the request is not one this session can still be asked about, and when the
+identified read returned nothing. The sixteen most recent reads of a session are retained.
+
+[`docs/getTotalRecords.md`](docs/getTotalRecords.md) is the client facing specification.
 
 `getTotalRecords` is not part of OPC UA. Set `historyManager` to `false` at the root of the
 configuration to leave it out entirely, which is useful for testing a client against nothing but the
