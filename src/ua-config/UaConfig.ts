@@ -11,6 +11,7 @@ import type { CallbackT } from "node-opcua-status-code";
 import { installAggregateConfigurationOptions } from "node-opcua-aggregates";
 import { join } from "node:path";
 import installAggregates from "./Aggregates";
+import installReadAtTime from "./ReadAtTime";
 import type {
   DeviceConfig,
   FolderConfig,
@@ -387,6 +388,9 @@ async function createVariable(
   // advertise the supported aggregates on the variable itself so clients can
   // discover them without browsing the server capabilities
   installAggregateConfigurationOptions(variableNode, {});
+
+  // node-opcua does not implement HistoryRead's ReadAtTime interface itself
+  installReadAtTime(variableNode);
 
   return variableNode;
 }
