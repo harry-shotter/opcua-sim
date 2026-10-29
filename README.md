@@ -238,6 +238,13 @@ the following aggregates:
 `StandardDeviationSample` return `BadAggregateNotSupported` for non numeric variables, and `Start`
 carries the previous value forward for them rather than interpolating.
 
+Clients can also request `HistoryRead` with `ReadAtTimeDetails` to get a value for one or more
+specific timestamps, rather than a time range. When no raw value exists exactly on a requested
+timestamp, the value is interpolated from the surrounding history using the same rules as the
+`Interpolative` aggregate above - a straight line between the bounding values, or the previous value
+held constant if `useSimpleBounds` is set on the request or the variable's historical configuration
+is `stepped`.
+
 ## Historical Alarms & Conditions
 
 The server can answer `HistoryRead` for events from a fixed set of records. No alarms are generated

@@ -1,5 +1,6 @@
 {
   "name": "opcua-sim",
+  "version": "1.6.0",
   "description": "A configurable OPC UA server for simulating industrial data from a JSON tag hierarchy.",
   "module": "server.ts",
   "type": "module",
